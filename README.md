@@ -63,8 +63,8 @@ Routes:
 - `GET /admin/write-actions?limit=50`
 - `GET /admin/products/:productId/variants` *(canonical read endpoint)*
 - `GET /admin/products/:productId/offer-codes` *(canonical read endpoint)*
-- `GET /admin/products/variants?productId=<id>` *(deprecated)*
-- `GET /admin/products/offer-codes?productId=<id>` *(deprecated)*
+- `GET /admin/products/variants?productId=<id>` *(deprecated alias; responds with `Deprecation: true` and `Sunset: Wed, 31 Dec 2026 23:59:59 GMT`)*
+- `GET /admin/products/offer-codes?productId=<id>` *(deprecated alias; responds with `Deprecation: true` and `Sunset: Wed, 31 Dec 2026 23:59:59 GMT`)*
 - `POST /admin/products/preview_product_create`
 - `POST /admin/products/confirm_product_create`
 - `POST /admin/products/:productId/variants/refresh`

@@ -6,7 +6,7 @@ import { dailySummaryJob, processPendingWebhookEvents, processWebhookEvent, sync
 import { handleMcpRequest } from "./mcp.js";
 import { createAppContext } from "./services/app-context.js";
 import { buildCheckoutUrl, parseCheckoutLinkRequest } from "./services/checkout-links.js";
-import { confirmCatalogAction, previewCatalogAction, readProductOfferCodes, readProductVariants } from "./services/catalog-management.js";
+import { confirmCatalogAction, previewCatalogAction } from "./services/catalog-management.js";
 import { confirmProductCreate, previewProductCreate, refreshOfferCodes, refreshVariants } from "./services/product-create.js";
 import { formatMoney } from "./utils/format.js";
 import {
@@ -32,6 +32,31 @@ function confirmationErrorStatus(message: string) {
   if (message.includes("not found")) return 404;
   if (message.includes("Unsupported operation") || message.includes("Unsupported action")) return 501;
   return 400;
+}
+
+function extractProductId(pathname: string, regex: RegExp) {
+  const match = pathname.match(regex);
+  if (!match?.[1]) return null;
+  return decodeURIComponent(match[1]);
+}
+
+async function withParsedBody(req: IncomingMessage, handler: (body: Record<string, unknown>) => Promise<void> | void) {
+  const body = parseBody(req.headers["content-type"], await readRawBody(req));
+  await handler(body);
+}
+
+async function withErrorBoundary(
+  res: ServerResponse,
+  actionType: string,
+  handler: () => Promise<void>,
+  statusFromMessage: (message: string) => number = () => 400,
+) {
+  try {
+    await handler();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return sendJson(res, statusFromMessage(message), { ok: false, action_type: actionType, error: message });
+  }
 }
 
 function publicConfirmation(result: {
@@ -180,16 +205,70 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       return sendJson(res, 200, { count: products.length, products });
     }
 
-    if (req.method === "GET" && /^\/admin\/products\/[^/]+\/variants$/.test(url.pathname)) {
-      const productId = url.pathname.split("/")[3];
-      const product = ctx.store.getProduct(productId);
-      return sendJson(res, 200, { productId, variants: product?.variants ?? [] });
+    const patternRoutes = [
+      {
+        method: "GET",
+        regex: /^\/admin\/products\/([^/]+)\/variants$/,
+        handler: async (productId: string) => {
+          const product = ctx.store.getProduct(productId);
+          return sendJson(res, 200, { productId, variants: product?.variants ?? [] });
+        },
+      },
+      {
+        method: "GET",
+        regex: /^\/admin\/products\/([^/]+)\/offer-codes$/,
+        handler: async (productId: string) => {
+          const product = ctx.store.getProduct(productId);
+          return sendJson(res, 200, { productId, offerCodes: product?.offerCodes ?? [] });
+        },
+      },
+      {
+        method: "POST",
+        regex: /^\/admin\/products\/([^/]+)\/variants\/refresh$/,
+        handler: async (productId: string) => {
+          assertConfiguredAccessToken();
+          const variants = await refreshVariants(ctx, productId);
+          return sendJson(res, 200, { ok: true, productId, count: variants.length, variants });
+        },
+      },
+      {
+        method: "POST",
+        regex: /^\/admin\/products\/([^/]+)\/offer-codes\/refresh$/,
+        handler: async (productId: string) => {
+          assertConfiguredAccessToken();
+          const offerCodes = await refreshOfferCodes(ctx, productId);
+          return sendJson(res, 200, { ok: true, productId, count: offerCodes.length, offerCodes });
+        },
+      },
+    ] as const;
+    for (const route of patternRoutes) {
+      if (req.method !== route.method) continue;
+      const productId = extractProductId(url.pathname, route.regex);
+      if (!productId) continue;
+      return route.handler(productId);
     }
 
-    if (req.method === "GET" && /^\/admin\/products\/[^/]+\/offer-codes$/.test(url.pathname)) {
-      const productId = url.pathname.split("/")[3];
-      const product = ctx.store.getProduct(productId);
-      return sendJson(res, 200, { productId, offerCodes: product?.offerCodes ?? [] });
+    const exactRoutes: Record<string, () => Promise<void> | void> = {
+      "GET:/admin/products/variants": () => {
+        res.setHeader("Deprecation", "true");
+        res.setHeader("Sunset", "Wed, 31 Dec 2026 23:59:59 GMT");
+        const productId = url.searchParams.get("productId");
+        if (!productId) return sendJson(res, 400, { error: "productId is required." });
+        const product = ctx.store.getProduct(productId);
+        return sendJson(res, 200, { ok: true, productId, variants: product?.variants ?? [] });
+      },
+      "GET:/admin/products/offer-codes": () => {
+        res.setHeader("Deprecation", "true");
+        res.setHeader("Sunset", "Wed, 31 Dec 2026 23:59:59 GMT");
+        const productId = url.searchParams.get("productId");
+        if (!productId) return sendJson(res, 400, { error: "productId is required." });
+        const product = ctx.store.getProduct(productId);
+        return sendJson(res, 200, { ok: true, productId, offerCodes: product?.offerCodes ?? [] });
+      },
+    };
+    const exactRoute = exactRoutes[`${req.method}:${url.pathname}`];
+    if (exactRoute) {
+      return exactRoute();
     }
 
     if (req.method === "POST" && url.pathname === "/admin/checkout-links/generate") {
@@ -212,20 +291,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
-    }
-
-    if (req.method === "POST" && /^\/admin\/products\/[^/]+\/variants\/refresh$/.test(url.pathname)) {
-      assertConfiguredAccessToken();
-      const productId = url.pathname.split("/")[3];
-      const variants = await refreshVariants(ctx, productId);
-      return sendJson(res, 200, { ok: true, productId, count: variants.length, variants });
-    }
-
-    if (req.method === "POST" && /^\/admin\/products\/[^/]+\/offer-codes\/refresh$/.test(url.pathname)) {
-      assertConfiguredAccessToken();
-      const productId = url.pathname.split("/")[3];
-      const offerCodes = await refreshOfferCodes(ctx, productId);
-      return sendJson(res, 200, { ok: true, productId, count: offerCodes.length, offerCodes });
     }
 
     if (req.method === "GET" && url.pathname === "/admin/sales") {
@@ -335,22 +400,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       return sendJson(res, 200, { ok: true, result });
     }
 
-    if (req.method === "GET" && url.pathname === "/admin/products/variants") {
-      assertConfiguredAccessToken();
-      const productId = url.searchParams.get("productId");
-      if (!productId) return sendJson(res, 400, { error: "productId is required." });
-      const result = await readProductVariants(ctx, productId);
-      return sendJson(res, 200, { ok: true, ...result });
-    }
-
-    if (req.method === "GET" && url.pathname === "/admin/products/offer-codes") {
-      assertConfiguredAccessToken();
-      const productId = url.searchParams.get("productId");
-      if (!productId) return sendJson(res, 400, { error: "productId is required." });
-      const result = await readProductOfferCodes(ctx, productId);
-      return sendJson(res, 200, { ok: true, ...result });
-    }
-
     if (req.method === "POST" && url.pathname === "/admin/writes/preview") {
       const rawBody = await readRawBody(req);
       const body = parseBody(req.headers["content-type"], rawBody);
@@ -384,16 +433,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     }
 
     if (req.method === "POST" && url.pathname === "/admin/writes/confirm") {
-      const rawBody = await readRawBody(req);
-      const body = parseBody(req.headers["content-type"], rawBody);
-      try {
-        const result = await confirmCatalogAction(ctx, body);
-        return sendJson(res, 200, result);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const status = message.includes("already been used") ? 409 : message.includes("not found") ? 404 : 400;
-        return sendJson(res, status, { ok: false, action_type: "confirm_catalog_action", error: message });
-      }
+      return withErrorBoundary(
+        res,
+        "confirm_catalog_action",
+        () =>
+          withParsedBody(req, async (body) => {
+            const result = await confirmCatalogAction(ctx, body);
+            sendJson(res, 200, result);
+          }),
+        confirmationErrorStatus,
+      );
     }
 
     if (req.method === "POST" && url.pathname === "/admin/products/confirm_product_create") {
@@ -410,94 +459,24 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       }
     }
 
-    if (req.method === "POST" && url.pathname === "/admin/variants/categories/preview_create") {
-      const body = parseBody(req.headers["content-type"], await readRawBody(req));
-      try {
-        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_category_create" });
-        return sendJson(res, 200, result);
-      } catch (error) {
-        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/admin/variants/categories/preview_edit") {
-      const body = parseBody(req.headers["content-type"], await readRawBody(req));
-      try {
-        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_category_edit" });
-        return sendJson(res, 200, result);
-      } catch (error) {
-        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/admin/variants/categories/preview_delete") {
-      const body = parseBody(req.headers["content-type"], await readRawBody(req));
-      try {
-        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_category_delete" });
-        return sendJson(res, 200, result);
-      } catch (error) {
-        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/admin/variants/preview_create") {
-      const body = parseBody(req.headers["content-type"], await readRawBody(req));
-      try {
-        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_create" });
-        return sendJson(res, 200, result);
-      } catch (error) {
-        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/admin/variants/preview_edit") {
-      const body = parseBody(req.headers["content-type"], await readRawBody(req));
-      try {
-        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_edit" });
-        return sendJson(res, 200, result);
-      } catch (error) {
-        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/admin/variants/preview_delete") {
-      const body = parseBody(req.headers["content-type"], await readRawBody(req));
-      try {
-        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_delete" });
-        return sendJson(res, 200, result);
-      } catch (error) {
-        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/admin/offer-codes/preview_create") {
-      const body = parseBody(req.headers["content-type"], await readRawBody(req));
-      try {
-        const result = previewCatalogAction(ctx, { ...body, action_type: "offer_code_create" });
-        return sendJson(res, 200, result);
-      } catch (error) {
-        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/admin/offer-codes/preview_delete") {
-      const body = parseBody(req.headers["content-type"], await readRawBody(req));
-      try {
-        const result = previewCatalogAction(ctx, { ...body, action_type: "offer_code_delete" });
-        return sendJson(res, 200, result);
-      } catch (error) {
-        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/admin/offer-codes/preview_disable") {
-      const body = parseBody(req.headers["content-type"], await readRawBody(req));
-      try {
-        const result = previewCatalogAction(ctx, { ...body, action_type: "offer_code_disable" });
-        return sendJson(res, 200, result);
-      } catch (error) {
-        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-      }
+    const previewRouteActions: Record<string, string> = {
+      "/admin/variants/categories/preview_create": "variant_category_create",
+      "/admin/variants/categories/preview_edit": "variant_category_edit",
+      "/admin/variants/categories/preview_delete": "variant_category_delete",
+      "/admin/variants/preview_create": "variant_create",
+      "/admin/variants/preview_edit": "variant_edit",
+      "/admin/variants/preview_delete": "variant_delete",
+      "/admin/offer-codes/preview_create": "offer_code_create",
+      "/admin/offer-codes/preview_delete": "offer_code_delete",
+      "/admin/offer-codes/preview_disable": "offer_code_disable",
+    };
+    if (req.method === "POST" && previewRouteActions[url.pathname]) {
+      return withErrorBoundary(res, "preview_catalog_action", () =>
+        withParsedBody(req, (body) => {
+          const result = previewCatalogAction(ctx, { ...body, action_type: previewRouteActions[url.pathname] });
+          sendJson(res, 200, result);
+        }),
+      );
     }
 
     return sendJson(res, 404, { error: "Admin route not found." });
