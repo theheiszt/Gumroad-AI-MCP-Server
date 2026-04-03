@@ -6,6 +6,14 @@ import { confirmWriteOperation, previewWriteOperation } from "./write-confirmati
 
 type CatalogActionInput = Record<string, unknown> & { action_type?: unknown };
 
+const PRODUCT_TYPE_TAGS: Record<string, string[]> = {
+  digital_product: ["digital-product"],
+  ebook: ["ebook", "digital-reading"],
+  bundle: ["bundle", "multi-product"],
+  membership: ["membership", "subscription"],
+  course: ["course", "learning"],
+};
+
 export function previewCatalogAction(ctx: AppContext, input: CatalogActionInput) {
   const actionType = requireActionType(input.action_type);
   const plan = buildActionPlan(actionType, input);
@@ -94,6 +102,10 @@ function requireActionType(value: unknown): WriteActionType {
 function buildActionPlan(actionType: WriteActionType, input: CatalogActionInput) {
   switch (actionType) {
     case "product_create": {
+      const productType = optionalString(input.product_type)?.toLowerCase() ?? "digital_product";
+      if (!(productType in PRODUCT_TYPE_TAGS)) {
+        throw new Error("product_type must be one of: digital_product, ebook, bundle, membership, course.");
+      }
       const name = requiredString(input.name, "name");
       const priceCents = requiredInteger(input.price_cents, "price_cents");
       const currency = optionalString(input.currency)?.toLowerCase() ?? "usd";
@@ -102,11 +114,11 @@ function buildActionPlan(actionType: WriteActionType, input: CatalogActionInput)
       maybeSet(payload, "published", booleanString(input.published));
       maybeSet(payload, "custom_summary", optionalString(input.custom_summary));
       maybeSet(payload, "custom_receipt", optionalString(input.custom_receipt));
-      maybeSet(payload, "tags", csv(input.tags));
+      maybeSet(payload, "tags", mergeTags(csv(input.tags), PRODUCT_TYPE_TAGS[productType]));
       return {
-        input,
+        input: { ...input, product_type: productType },
         apiRequest: { method: "POST" as const, path: "/v2/products", payload },
-        preview: `Create product \"${name}\" with payload ${JSON.stringify(payload)}`,
+        preview: `Create ${productType} product \"${name}\" with payload ${JSON.stringify(payload)}`,
       };
     }
     case "variant_category_create": {
@@ -316,4 +328,12 @@ function csv(value: unknown) {
 
 function maybeSet(target: Record<string, string>, key: string, value?: string) {
   if (value !== undefined) target[key] = value;
+}
+
+function mergeTags(rawCsv: string | undefined, defaultTags: string[]) {
+  const out = new Set<string>(defaultTags);
+  for (const tag of (rawCsv ?? "").split(",").map((part) => part.trim()).filter(Boolean)) {
+    out.add(tag);
+  }
+  return out.size > 0 ? Array.from(out).join(",") : undefined;
 }
