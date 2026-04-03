@@ -1,5 +1,12 @@
-import type { LicenseCheck, Product, Sale, SyncSalesArgs } from "../types.js";
-import { normalizeLicenseCheck, normalizeProduct, normalizeSale } from "./normalize.js";
+import type { LicenseCheck, OfferCode, Product, Sale, SyncSalesArgs, Variant, VariantCategory } from "../types.js";
+import {
+  normalizeLicenseCheck,
+  normalizeOfferCode,
+  normalizeProduct,
+  normalizeSale,
+  normalizeVariant,
+  normalizeVariantCategory,
+} from "./normalize.js";
 
 const GUMROAD_API = "https://api.gumroad.com";
 
@@ -55,6 +62,77 @@ export class GumroadClient {
     return sales.slice(0, limit);
   }
 
+  async createProduct(payload: Record<string, string>) {
+    const body = new URLSearchParams(payload);
+    return this.requestJson("POST", "/v2/products", body);
+  }
+
+  async createVariantCategory(productId: string, payload: Record<string, string>) {
+    return this.requestJson(
+      "POST",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories`,
+      new URLSearchParams(payload),
+    );
+  }
+
+  async editVariantCategory(productId: string, categoryId: string, payload: Record<string, string>) {
+    return this.requestJson(
+      "PATCH",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(categoryId)}`,
+      new URLSearchParams(payload),
+    );
+  }
+
+  async deleteVariantCategory(productId: string, categoryId: string) {
+    return this.requestJson("DELETE", `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(categoryId)}`);
+  }
+
+  async listVariantCategories(productId: string): Promise<VariantCategory[]> {
+    const response = await this.requestJson("GET", `/v2/products/${encodeURIComponent(productId)}/variant_categories`);
+    const rows = Array.isArray(response?.variant_categories) ? response.variant_categories : [];
+    return rows.map((row: Record<string, any>) => normalizeVariantCategory(row, productId));
+  }
+
+  async createVariant(productId: string, payload: Record<string, string>) {
+    return this.requestJson("POST", `/v2/products/${encodeURIComponent(productId)}/variants`, new URLSearchParams(payload));
+  }
+
+  async editVariant(productId: string, variantId: string, payload: Record<string, string>) {
+    return this.requestJson(
+      "PATCH",
+      `/v2/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}`,
+      new URLSearchParams(payload),
+    );
+  }
+
+  async deleteVariant(productId: string, variantId: string) {
+    return this.requestJson("DELETE", `/v2/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}`);
+  }
+
+  async listVariants(productId: string): Promise<Variant[]> {
+    const response = await this.requestJson("GET", `/v2/products/${encodeURIComponent(productId)}/variants`);
+    const rows = Array.isArray(response?.variants) ? response.variants : [];
+    return rows.map((row: Record<string, any>) => normalizeVariant(row, productId));
+  }
+
+  async createOfferCode(productId: string, payload: Record<string, string>) {
+    return this.requestJson("POST", `/v2/products/${encodeURIComponent(productId)}/offer_codes`, new URLSearchParams(payload));
+  }
+
+  async listOfferCodes(productId: string): Promise<OfferCode[]> {
+    const response = await this.requestJson("GET", `/v2/products/${encodeURIComponent(productId)}/offer_codes`);
+    const rows = Array.isArray(response?.offer_codes) ? response.offer_codes : [];
+    return rows.map((row: Record<string, any>) => normalizeOfferCode(row, productId));
+  }
+
+  async disableOfferCode(): Promise<never> {
+    throw new Error("Unsupported operation: disable offer code endpoint is not available in current Gumroad API wrapper.");
+  }
+
+  async deleteOfferCode(): Promise<never> {
+    throw new Error("Unsupported operation: delete offer code endpoint is not available in current Gumroad API wrapper.");
+  }
+
   async verifyLicense(productId: string, licenseKey: string): Promise<LicenseCheck> {
     const body = new URLSearchParams({
       product_id: productId,
@@ -65,7 +143,7 @@ export class GumroadClient {
     return normalizeLicenseCheck(productId, licenseKey, response);
   }
 
-  private async requestJson(method: "GET" | "POST", path: string, formBody?: URLSearchParams) {
+  private async requestJson(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: string, formBody?: URLSearchParams) {
     const headers: Record<string, string> = {};
     let url = `${GUMROAD_API}${path}`;
     let body: string | undefined;

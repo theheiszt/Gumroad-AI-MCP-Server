@@ -1,6 +1,16 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { JobRun, LicenseCheck, Product, Sale, SalesSummary, StoreState, WebhookEvent } from "../types.js";
+import type {
+  JobRun,
+  LicenseCheck,
+  Product,
+  WriteConfirmation,
+  Sale,
+  SalesSummary,
+  StoreState,
+  WebhookEvent,
+  WriteActionLog,
+} from "../types.js";
 import { formatMoney, isoNow } from "../utils/format.js";
 
 function createEmptyState(): StoreState {
@@ -11,6 +21,8 @@ function createEmptyState(): StoreState {
     webhookEvents: {},
     licenseChecks: [],
     jobRuns: [],
+    writeConfirmations: {},
+    writeActions: [],
     meta: {
       createdAt: now,
       updatedAt: now,
@@ -96,14 +108,47 @@ export class FileStore {
     this.persist();
   }
 
+
+  recordWriteConfirmation(record: WriteConfirmation) {
+    this.state.writeConfirmations[record.confirmationId] = record;
+    this.persist();
+  }
+
+  getWriteConfirmation(confirmationId: string) {
+    return this.state.writeConfirmations[confirmationId];
+  }
+
+  updateWriteConfirmation(
+    confirmationId: string,
+    updater: (current: WriteConfirmation) => WriteConfirmation,
+  ) {
+    const current = this.state.writeConfirmations[confirmationId];
+    if (!current) return undefined;
+    const next = updater(current);
+    this.state.writeConfirmations[confirmationId] = next;
+    this.persist();
+    return next;
+  }
+
+  recordWriteAction(action: WriteActionLog) {
+    this.state.writeActions.unshift(action);
+    this.state.writeActions = this.state.writeActions.slice(0, 1000);
+    this.persist();
+  }
+
+  listWriteActions(limit = 50) {
+    return this.state.writeActions.slice(0, limit);
+  }
+
   listProducts() {
     return Object.values(this.state.products).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   listSales(limit = 50, after?: string) {
     const afterTime = after ? new Date(after).getTime() : undefined;
+    const hasAfterTime = afterTime !== undefined && Number.isFinite(afterTime);
     return Object.values(this.state.sales)
-      .filter((sale) => (afterTime ? new Date(sale.occurredAt).getTime() >= afterTime : true))
+      .filter((sale) => (hasAfterTime ? new Date(sale.occurredAt).getTime() >= afterTime : true))
       .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
       .slice(0, limit);
   }
@@ -120,6 +165,27 @@ export class FileStore {
 
   listRecentLicenseChecks(limit = 20) {
     return this.state.licenseChecks.slice(0, limit);
+  }
+
+  upsertProductVariantCategories(productId: string, categories: Product["variantCategories"] = []) {
+    const existing = this.state.products[productId];
+    if (!existing) return;
+    existing.variantCategories = categories;
+    this.persist();
+  }
+
+  upsertProductVariants(productId: string, variants: Product["variants"] = []) {
+    const existing = this.state.products[productId];
+    if (!existing) return;
+    existing.variants = variants;
+    this.persist();
+  }
+
+  upsertProductOfferCodes(productId: string, offerCodes: Product["offerCodes"] = []) {
+    const existing = this.state.products[productId];
+    if (!existing) return;
+    existing.offerCodes = offerCodes;
+    this.persist();
   }
 
   createSummary(windowDays: number): SalesSummary {
