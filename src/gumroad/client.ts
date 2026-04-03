@@ -55,6 +55,11 @@ export class GumroadClient {
     return sales.slice(0, limit);
   }
 
+
+  async createProduct(payload: Record<string, string>) {
+    const body = new URLSearchParams(payload);
+    return this.requestJson("POST", "/v2/products", body);
+  }
   async verifyLicense(productId: string, licenseKey: string): Promise<LicenseCheck> {
     const body = new URLSearchParams({
       product_id: productId,

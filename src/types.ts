@@ -63,12 +63,56 @@ export type JobRun = {
   details?: Record<string, unknown>;
 };
 
+export type ConfirmationStatus = "pending" | "executing" | "completed" | "expired" | "failed";
+
+export type WriteActionLog = {
+  id: string;
+  actionType: string;
+  status: "attempted" | "completed" | "failed";
+  at: string;
+  confirmationId?: string;
+  details?: Record<string, unknown>;
+};
+
+export type ProductCreateDraft = {
+  name: string;
+  description?: string;
+  priceCents: number;
+  currency: string;
+  published?: boolean;
+  customSummary?: string;
+  customReceipt?: string;
+  tags?: string[];
+};
+
+export type ProductCreateConfirmation = {
+  confirmationId: string;
+  actionType: "product_create";
+  payloadHash: string;
+  expiresAt: string;
+  status: ConfirmationStatus;
+  createdAt: string;
+  updatedAt: string;
+  requiresPhrase: boolean;
+  input: ProductCreateDraft;
+  apiPayload: Record<string, string>;
+  preview: string;
+  result?: {
+    executedAt: string;
+    response: Record<string, unknown>;
+    productId?: string;
+  };
+  error?: string;
+};
+
 export type StoreState = {
   products: Record<string, Product>;
   sales: Record<string, Sale>;
   webhookEvents: Record<string, WebhookEvent>;
   licenseChecks: LicenseCheck[];
   jobRuns: JobRun[];
+  productCreateConfirmations: Record<string, ProductCreateConfirmation>;
+  writeActions: WriteActionLog[];
   meta: {
     createdAt: string;
     updatedAt: string;
