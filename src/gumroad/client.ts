@@ -1,7 +1,9 @@
-import type { LicenseCheck, Product, Sale, SyncSalesArgs } from "../types.js";
-import { normalizeLicenseCheck, normalizeProduct, normalizeSale } from "./normalize.js";
+import type { LicenseCheck, OfferCode, Product, ProductVariant, Sale, SyncSalesArgs, VariantCategory } from "../types.js";
+import { normalizeLicenseCheck, normalizeOfferCode, normalizeProduct, normalizeSale, normalizeVariant, normalizeVariantCategory } from "./normalize.js";
 
 const GUMROAD_API = "https://api.gumroad.com";
+
+export class UnsupportedGumroadOperationError extends Error {}
 
 export class GumroadClient {
   constructor(private readonly accessToken: string) {}
@@ -55,6 +57,67 @@ export class GumroadClient {
     return sales.slice(0, limit);
   }
 
+  async createProduct(payload: Record<string, string>) {
+    const body = new URLSearchParams(payload);
+    return this.requestJson("POST", "/v2/products", body);
+  }
+
+  async createVariantCategory(payload: Record<string, string>) {
+    return this.requestJson("POST", "/v2/variants", new URLSearchParams(payload));
+  }
+
+  async editVariantCategory(payload: Record<string, string>) {
+    return this.requestJson("PUT", "/v2/variants", new URLSearchParams(payload));
+  }
+
+  async deleteVariantCategory(payload: Record<string, string>) {
+    return this.requestJson("DELETE", "/v2/variants", new URLSearchParams(payload));
+  }
+
+  async createVariant(payload: Record<string, string>) {
+    return this.requestJson("POST", "/v2/variants/values", new URLSearchParams(payload));
+  }
+
+  async editVariant(payload: Record<string, string>) {
+    return this.requestJson("PUT", "/v2/variants/values", new URLSearchParams(payload));
+  }
+
+  async deleteVariant(payload: Record<string, string>) {
+    return this.requestJson("DELETE", "/v2/variants/values", new URLSearchParams(payload));
+  }
+
+  async createOfferCode(payload: Record<string, string>) {
+    return this.requestJson("POST", "/v2/offer_codes", new URLSearchParams(payload));
+  }
+
+  async deleteOfferCode(payload: Record<string, string>) {
+    return this.requestJson("DELETE", "/v2/offer_codes", new URLSearchParams(payload));
+  }
+
+  async disableOfferCode(): Promise<never> {
+    throw new UnsupportedGumroadOperationError(
+      "Disable offer code is not supported by the currently implemented Gumroad endpoint set. Use delete_offer_code instead.",
+    );
+  }
+
+  async listProductVariantCategories(productId: string): Promise<VariantCategory[]> {
+    const response = await this.requestJson("GET", `/v2/products/${encodeURIComponent(productId)}/variants`);
+    const rows = Array.isArray(response?.variants) ? response.variants : [];
+    return rows.map((row: Record<string, any>) => normalizeVariantCategory(productId, row));
+  }
+
+  async listProductVariants(productId: string): Promise<ProductVariant[]> {
+    const response = await this.requestJson("GET", `/v2/products/${encodeURIComponent(productId)}/variant_values`);
+    const rows = Array.isArray(response?.variants) ? response.variants : [];
+    return rows.map((row: Record<string, any>) => normalizeVariant(productId, row));
+  }
+
+  async listOfferCodes(productId: string): Promise<OfferCode[]> {
+    const response = await this.requestJson("GET", `/v2/products/${encodeURIComponent(productId)}/offer_codes`);
+    const rows = Array.isArray(response?.offer_codes) ? response.offer_codes : [];
+    return rows.map((row: Record<string, any>) => normalizeOfferCode(productId, row));
+  }
+
   async verifyLicense(productId: string, licenseKey: string): Promise<LicenseCheck> {
     const body = new URLSearchParams({
       product_id: productId,
@@ -65,7 +128,7 @@ export class GumroadClient {
     return normalizeLicenseCheck(productId, licenseKey, response);
   }
 
-  private async requestJson(method: "GET" | "POST", path: string, formBody?: URLSearchParams) {
+  private async requestJson(method: "GET" | "POST" | "PUT" | "DELETE", path: string, formBody?: URLSearchParams) {
     const headers: Record<string, string> = {};
     let url = `${GUMROAD_API}${path}`;
     let body: string | undefined;
@@ -85,6 +148,9 @@ export class GumroadClient {
     const json = text ? safeJsonParse(text) : {};
     if (!response.ok || json?.success === false) {
       const message = typeof json?.message === "string" ? json.message : text || response.statusText;
+      if (response.status === 404 || response.status === 405) {
+        throw new UnsupportedGumroadOperationError(`Unsupported Gumroad operation at ${path}: ${message}`);
+      }
       throw new Error(`Gumroad API error ${response.status}: ${message}`);
     }
     return json;

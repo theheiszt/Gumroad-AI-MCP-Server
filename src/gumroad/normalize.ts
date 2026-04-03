@@ -1,4 +1,4 @@
-import type { LicenseCheck, Product, Sale, WebhookEvent } from "../types.js";
+import type { LicenseCheck, OfferCode, Product, ProductVariant, VariantCategory, Sale, WebhookEvent } from "../types.js";
 import { isoNow, randomId } from "../utils/format.js";
 
 export function normalizeProduct(input: Record<string, any>): Product {
@@ -17,6 +17,50 @@ export function normalizeProduct(input: Record<string, any>): Product {
         : undefined,
     salesCount: input.sales_count != null ? Number(input.sales_count) : undefined,
     tags: Array.isArray(input.tags) ? input.tags.map((value: unknown) => String(value)) : undefined,
+    raw: input,
+  };
+}
+
+export function normalizeVariantCategory(productId: string, input: Record<string, any>): VariantCategory {
+  const options = Array.isArray(input.options)
+    ? input.options.map((value: unknown) => String(value))
+    : Array.isArray(input.variants)
+      ? input.variants.map((value: unknown) => String(value))
+      : [];
+
+  return {
+    id: String(input.id ?? input.variant_category_id ?? randomId("varcat")),
+    productId,
+    name: String(input.name ?? input.title ?? "Variant category"),
+    options,
+    raw: input,
+  };
+}
+
+export function normalizeVariant(productId: string, input: Record<string, any>): ProductVariant {
+  return {
+    id: String(input.id ?? input.variant_id ?? randomId("variant")),
+    productId,
+    categoryId: typeof input.variant_category_id === "string" ? input.variant_category_id : undefined,
+    categoryName: typeof input.variant_category_name === "string" ? input.variant_category_name : undefined,
+    name: String(input.name ?? input.title ?? input.option ?? "Variant"),
+    priceDifferenceCents: input.price_difference_cents != null ? Number(input.price_difference_cents) : undefined,
+    quantityLeft: input.quantity_left != null ? Number(input.quantity_left) : undefined,
+    raw: input,
+  };
+}
+
+export function normalizeOfferCode(productId: string, input: Record<string, any>): OfferCode {
+  return {
+    id: String(input.id ?? input.offer_code_id ?? randomId("offer")),
+    productId,
+    name: String(input.name ?? input.offer_name ?? input.code ?? "Offer code"),
+    code: String(input.code ?? input.offer_code ?? input.name ?? ""),
+    amountOffCents: input.amount_off_cents != null ? Number(input.amount_off_cents) : undefined,
+    percentOff: input.percent_off != null ? Number(input.percent_off) : undefined,
+    maxPurchaseCount: input.max_purchase_count != null ? Number(input.max_purchase_count) : undefined,
+    expiresAt: typeof input.expires_at === "string" ? input.expires_at : undefined,
+    disabled: input.disabled != null ? Boolean(input.disabled) : undefined,
     raw: input,
   };
 }
