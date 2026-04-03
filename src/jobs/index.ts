@@ -1,4 +1,5 @@
 import { buildSummaryDelivery, buildWebhookDeliveries, dispatchRuleOutputs } from "../automation/rules.js";
+import { deriveSaleFromWebhook, normalizeGumroadPingSaleFromWebhook } from "../gumroad/normalize.js";
 import type { AppContext } from "../services/app-context.js";
 import type { JobRun, SyncSalesArgs, WebhookEvent } from "../types.js";
 import { daysAgoIso, isoNow, randomId } from "../utils/format.js";
@@ -90,31 +91,54 @@ export async function dailySummaryJob(ctx: AppContext, windowDays = 1) {
 
 export async function processWebhookEvent(ctx: AppContext, event: WebhookEvent) {
   const record = ctx.store.recordWebhookEvent(event);
-  if (!record.inserted) {
-    return { duplicate: true, event: record.existing };
+  return record.inserted ? { duplicate: false, event } : { duplicate: true, event: record.existing };
+}
+
+export async function processPendingWebhookEvents(ctx: AppContext, batchSize = 25) {
+  const pending = ctx.store.listUnprocessedWebhookEvents(batchSize);
+  const result = { scanned: pending.length, processed: 0, failed: 0 };
+
+  for (const event of pending) {
+    try {
+      const pingSale = normalizeGumroadPingSaleFromWebhook(event);
+      ctx.store.upsertGumroadPingSale(pingSale);
+
+      const sale = deriveSaleFromWebhook(event.raw);
+      if (sale) ctx.store.upsertSales([sale]);
+
+      await dispatchRuleOutputs(
+        buildWebhookDeliveries({
+          event,
+          saleWebhookUrl: ctx.config.outboundSaleWebhookUrl,
+          membershipWebhookUrl: ctx.config.outboundMembershipWebhookUrl,
+        }),
+      );
+
+      ctx.store.markWebhookEventProcessed(event.id);
+      result.processed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[webhooks] failed to process event", {
+        eventId: event.id,
+        dedupeKey: event.dedupeKey,
+        eventType: event.eventType,
+        error: message,
+      });
+      ctx.store.markWebhookEventFailed(event.id, message);
+      result.failed += 1;
+    }
   }
 
-  await dispatchRuleOutputs(
-    buildWebhookDeliveries({
-      event,
-      saleWebhookUrl: ctx.config.outboundSaleWebhookUrl,
-      membershipWebhookUrl: ctx.config.outboundMembershipWebhookUrl,
-    }),
-  );
+  if (result.processed > 0 || result.failed > 0) {
+    await recordRun(ctx, {
+      name: "process-webhook-events",
+      startedAt: isoNow(),
+      finishedAt: isoNow(),
+      status: result.failed > 0 ? "error" : "success",
+      message: `Processed ${result.processed}/${result.scanned} webhook event(s).`,
+      details: result,
+    });
+  }
 
-  await recordRun(ctx, {
-    name: "webhook-event",
-    startedAt: event.receivedAt,
-    finishedAt: isoNow(),
-    status: "success",
-    message: `Processed webhook event ${event.eventType}.`,
-    details: {
-      dedupeKey: event.dedupeKey,
-      eventType: event.eventType,
-      productId: event.productId,
-      saleId: event.saleId,
-    },
-  });
-
-  return { duplicate: false, event };
+  return result;
 }

@@ -77,14 +77,16 @@ export function verifyWebhookRequest(args: {
   headers: IncomingMessage["headers"];
   body: Record<string, unknown>;
   secret: string;
+  mode?: "auto" | "header-hmac" | "body-secret";
 }) {
+  const verificationMode = args.mode ?? "auto";
   if (!args.secret) {
     return { ok: true, mode: "disabled" } as const;
   }
 
   const headerSignature = args.headers["x-gumroad-signature"];
   const signature = Array.isArray(headerSignature) ? headerSignature[0] : headerSignature;
-  if (signature) {
+  if (signature && verificationMode !== "body-secret") {
     const normalizedSignature = signature.startsWith("sha256=") ? signature.slice("sha256=".length) : signature;
     const expected = createHmac("sha256", args.secret).update(args.rawBody).digest("hex");
     const actualBuffer = Buffer.from(normalizedSignature);
@@ -93,10 +95,12 @@ export function verifyWebhookRequest(args: {
     return { ok, mode: "x-gumroad-signature" } as const;
   }
 
-  for (const key of ["secret", "token", "ping_secret", "password"]) {
-    const value = args.body[key];
-    if (typeof value === "string") {
-      return { ok: value === args.secret, mode: `body.${key}` } as const;
+  if (verificationMode !== "header-hmac") {
+    for (const key of ["secret", "token", "ping_secret", "password"]) {
+      const value = args.body[key];
+      if (typeof value === "string") {
+        return { ok: value === args.secret, mode: `body.${key}` } as const;
+      }
     }
   }
 

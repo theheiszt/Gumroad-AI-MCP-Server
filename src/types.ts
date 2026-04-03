@@ -78,12 +78,39 @@ export type WebhookEvent = {
   dedupeKey: string;
   receivedAt: string;
   eventType: string;
+  status: "pending" | "processed" | "failed";
+  processingAttempts: number;
+  firstProcessedAt?: string;
+  lastProcessedAt?: string;
+  lastError?: string;
   productId?: string;
   productName?: string;
   saleId?: string;
   orderNumber?: string;
   purchaserEmail?: string;
   raw: Record<string, unknown>;
+};
+
+export type GumroadPingSaleRecord = {
+  id: string;
+  sourceEventId: string;
+  sourceDedupeKey: string;
+  saleId?: string;
+  saleTimestamp?: string;
+  orderNumber?: string;
+  sellerId?: string;
+  productId?: string;
+  productName?: string;
+  email?: string;
+  price?: number;
+  recurrence?: string;
+  variants?: string;
+  licenseKey?: string;
+  quantity?: number;
+  refunded?: boolean;
+  raw: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type JobStatus = "success" | "error";
@@ -182,6 +209,7 @@ export type StoreState = {
   products: Record<string, Product>;
   sales: Record<string, Sale>;
   webhookEvents: Record<string, WebhookEvent>;
+  gumroadPingSales: Record<string, GumroadPingSaleRecord>;
   licenseChecks: LicenseCheck[];
   jobRuns: JobRun[];
   writeConfirmations: Record<string, WriteConfirmation>;

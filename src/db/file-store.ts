@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type {
+  GumroadPingSaleRecord,
   JobRun,
   LicenseCheck,
   OfferCode,
@@ -22,6 +23,7 @@ function createEmptyState(): StoreState {
     products: {},
     sales: {},
     webhookEvents: {},
+    gumroadPingSales: {},
     licenseChecks: [],
     jobRuns: [],
     writeConfirmations: {},
@@ -48,6 +50,7 @@ export class FileStore {
         ...parsed,
         writeConfirmations: parsed.writeConfirmations ?? {},
         productCreateConfirmations: parsed.productCreateConfirmations ?? {},
+        gumroadPingSales: parsed.gumroadPingSales ?? {},
       } as StoreState;
     } catch {
       return createEmptyState();
@@ -133,6 +136,43 @@ export class FileStore {
     return { inserted: true, event };
   }
 
+  listUnprocessedWebhookEvents(limit = 50) {
+    return Object.values(this.state.webhookEvents)
+      .filter((event) => event.status === "pending")
+      .sort((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime())
+      .slice(0, limit);
+  }
+
+  markWebhookEventProcessed(eventId: string) {
+    const event = this.state.webhookEvents[eventId];
+    if (!event) return;
+    const now = isoNow();
+    event.status = "processed";
+    event.processingAttempts += 1;
+    event.lastProcessedAt = now;
+    if (!event.firstProcessedAt) event.firstProcessedAt = now;
+    event.lastError = undefined;
+    this.persist();
+  }
+
+  markWebhookEventFailed(eventId: string, error: string) {
+    const event = this.state.webhookEvents[eventId];
+    if (!event) return;
+    event.status = "failed";
+    event.processingAttempts += 1;
+    event.lastProcessedAt = isoNow();
+    event.lastError = error;
+    this.persist();
+  }
+
+  upsertGumroadPingSale(record: GumroadPingSaleRecord) {
+    const existing = this.state.gumroadPingSales[record.id];
+    this.state.gumroadPingSales[record.id] = existing
+      ? { ...existing, ...record, createdAt: existing.createdAt, updatedAt: isoNow() }
+      : record;
+    this.persist();
+  }
+
   recordLicenseCheck(result: LicenseCheck) {
     this.state.licenseChecks.unshift(result);
     this.state.licenseChecks = this.state.licenseChecks.slice(0, 500);
@@ -210,6 +250,12 @@ export class FileStore {
   listWebhookEvents(limit = 50) {
     return Object.values(this.state.webhookEvents)
       .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
+      .slice(0, limit);
+  }
+
+  listGumroadPingSales(limit = 50) {
+    return Object.values(this.state.gumroadPingSales)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, limit);
   }
 

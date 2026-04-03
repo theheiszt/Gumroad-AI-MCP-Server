@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { LicenseCheck, OfferCode, Product, Sale, Variant, VariantCategory, WebhookEvent } from "../types.js";
 import { isoNow, randomId } from "../utils/format.js";
 
@@ -123,19 +124,15 @@ export function normalizeWebhookEvent(payload: Record<string, unknown>): Webhook
   const orderNumber = readString(payload, "order_id") ?? readString(payload, "order_number");
   const purchaserEmail = readString(payload, "email") ?? readString(payload, "purchase_email") ?? readString(payload, "user_email");
 
-  const dedupeKey = [
-    eventType,
-    saleId ?? orderNumber ?? "no-sale-id",
-    productId ?? "no-product-id",
-    purchaserEmail ?? "no-email",
-    readString(payload, "created_at") ?? readString(payload, "timestamp") ?? "no-time",
-  ].join("::");
+  const dedupeKey = deriveWebhookDedupeKey(payload);
 
   return {
     id: randomId("evt"),
     dedupeKey,
     receivedAt: isoNow(),
     eventType,
+    status: "pending",
+    processingAttempts: 0,
     productId,
     productName,
     saleId,
@@ -153,6 +150,53 @@ export function deriveSaleFromWebhook(payload: Record<string, unknown>): Sale | 
   return normalizeSale(payload as Record<string, any>);
 }
 
+export function deriveWebhookDedupeKey(payload: Record<string, unknown>) {
+  const eventType = deriveEventType(payload);
+  const parts = [
+    eventType,
+    readString(payload, "sale_id") ?? readString(payload, "purchase_id") ?? readString(payload, "order_id") ?? readString(payload, "order_number") ?? "",
+    readString(payload, "product_id") ?? "",
+    (readString(payload, "email") ?? readString(payload, "purchase_email") ?? readString(payload, "user_email") ?? "").toLowerCase(),
+    readString(payload, "sale_timestamp") ?? readString(payload, "created_at") ?? readString(payload, "timestamp") ?? "",
+  ];
+  const stableInput = parts.join("::");
+  return createHash("sha256").update(stableInput).digest("hex");
+}
+
+export function normalizeGumroadPingSaleFromWebhook(event: WebhookEvent) {
+  const payload = event.raw;
+  const now = isoNow();
+  return {
+    id: createHash("sha256")
+      .update(
+        [
+          event.dedupeKey,
+          readString(payload, "sale_id") ?? readString(payload, "purchase_id") ?? "",
+          readString(payload, "order_number") ?? readString(payload, "order_id") ?? "",
+        ].join("::"),
+      )
+      .digest("hex"),
+    sourceEventId: event.id,
+    sourceDedupeKey: event.dedupeKey,
+    saleId: readString(payload, "sale_id") ?? readString(payload, "purchase_id"),
+    saleTimestamp: readString(payload, "sale_timestamp") ?? readString(payload, "created_at") ?? readString(payload, "timestamp"),
+    orderNumber: readString(payload, "order_number") ?? readString(payload, "order_id"),
+    sellerId: readString(payload, "seller_id"),
+    productId: readString(payload, "product_id"),
+    productName: readString(payload, "product_name"),
+    email: readString(payload, "email") ?? readString(payload, "purchase_email") ?? readString(payload, "user_email"),
+    price: numberOrUndefined(payload.price),
+    recurrence: readString(payload, "recurrence"),
+    variants: readString(payload, "variants"),
+    licenseKey: readString(payload, "license_key"),
+    quantity: numberOrUndefined(payload.quantity),
+    refunded: booleanOrUndefined(payload.refunded),
+    raw: payload,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 function deriveEventType(payload: Record<string, unknown>) {
   const explicit = readString(payload, "resource_name") ?? readString(payload, "event_type") ?? readString(payload, "type");
   if (explicit) return explicit;
@@ -166,4 +210,18 @@ function deriveEventType(payload: Record<string, unknown>) {
 function readString(payload: Record<string, unknown>, key: string) {
   const value = payload[key];
   return typeof value === "string" && value ? value : undefined;
+}
+
+function numberOrUndefined(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function booleanOrUndefined(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    if (value === "true") return true;
+    if (value === "false") return false;
+  }
+  return undefined;
 }

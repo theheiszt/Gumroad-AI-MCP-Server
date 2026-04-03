@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { URL } from "node:url";
 import { assertConfiguredAccessToken, config } from "./config.js";
-import { normalizeWebhookEvent, deriveSaleFromWebhook } from "./gumroad/normalize.js";
-import { dailySummaryJob, processWebhookEvent, syncProductsJob, syncSalesJob } from "./jobs/index.js";
+import { normalizeWebhookEvent } from "./gumroad/normalize.js";
+import { dailySummaryJob, processPendingWebhookEvents, processWebhookEvent, syncProductsJob, syncSalesJob } from "./jobs/index.js";
 import { handleMcpRequest } from "./mcp.js";
 import { createAppContext } from "./services/app-context.js";
 import { confirmCatalogAction, previewCatalogAction, readProductOfferCodes, readProductVariants } from "./services/catalog-management.js";
@@ -105,9 +105,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       headers: req.headers,
       body,
       secret: config.gumroadWebhookSecret,
+      mode: config.gumroadWebhookVerificationMode,
     });
 
     if (!verification.ok) {
+      console.error("[webhooks] verification failed", {
+        mode: verification.mode,
+        contentType: req.headers["content-type"],
+      });
       return sendJson(res, 401, {
         ok: false,
         error: "Webhook verification failed",
@@ -115,12 +120,25 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       });
     }
 
+    if (!body || typeof body !== "object" || Array.isArray(body) || ("raw" in body && Object.keys(body).length === 1)) {
+      const malformedEvent = normalizeWebhookEvent({
+        event_type: "malformed",
+        parse_error: "Payload could not be parsed into a structured object.",
+        raw: String(rawBody.toString("utf8")).slice(0, 5000),
+      });
+      ctx.store.recordWebhookEvent({
+        ...malformedEvent,
+        status: "failed",
+        processingAttempts: 1,
+        lastProcessedAt: malformedEvent.receivedAt,
+        lastError: "Malformed webhook payload",
+      });
+      console.error("[webhooks] malformed payload", { contentType: req.headers["content-type"] });
+      return sendJson(res, 400, { ok: false, error: "Malformed webhook payload." });
+    }
+
     const event = normalizeWebhookEvent(body);
     const result = await processWebhookEvent(ctx, event);
-    const sale = deriveSaleFromWebhook(body);
-    if (sale) {
-      ctx.store.upsertSales([sale]);
-    }
 
     return sendJson(res, 200, {
       ok: true,
@@ -144,6 +162,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
           products: Object.keys(state.products).length,
           sales: Object.keys(state.sales).length,
           webhookEvents: Object.keys(state.webhookEvents).length,
+          gumroadPingSales: Object.keys(state.gumroadPingSales).length,
           licenseChecks: state.licenseChecks.length,
           jobRuns: state.jobRuns.length,
         },
@@ -208,6 +227,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       return sendJson(res, 200, { events: ctx.store.listWebhookEvents(limit) });
     }
 
+    if (req.method === "GET" && url.pathname === "/admin/events/gumroad-sales") {
+      const limit = numberOrFallback(url.searchParams.get("limit"), 50);
+      return sendJson(res, 200, { sales: ctx.store.listGumroadPingSales(limit) });
+    }
+
     if (req.method === "GET" && url.pathname === "/admin/jobs") {
       const limit = numberOrFallback(url.searchParams.get("limit"), 20);
       return sendJson(res, 200, { jobs: ctx.store.listJobRuns(limit) });
@@ -259,6 +283,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
             : 1,
       );
       return sendJson(res, 200, { ok: true, job: "daily-summary", result });
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/jobs/process-webhooks") {
+      const rawBody = await readRawBody(req);
+      const body = parseBody(req.headers["content-type"], rawBody);
+      const batchSize =
+        typeof body.batchSize === "string"
+          ? numberOrFallback(body.batchSize, 25)
+          : typeof body.batchSize === "number" && Number.isFinite(body.batchSize)
+            ? body.batchSize
+            : 25;
+      const result = await processPendingWebhookEvents(ctx, batchSize);
+      return sendJson(res, 200, { ok: true, job: "process-webhooks", result });
     }
 
     if (req.method === "POST" && url.pathname === "/admin/licenses/verify") {
@@ -461,5 +498,6 @@ server.listen(config.port, () => {
     setInterval(() => void syncProductsJob(ctx).catch(console.error), config.syncProductsIntervalMs);
     setInterval(() => void syncSalesJob(ctx).catch(console.error), config.syncSalesIntervalMs);
     setInterval(() => void dailySummaryJob(ctx, 1).catch(console.error), config.dailySummaryIntervalMs);
+    setInterval(() => void processPendingWebhookEvents(ctx).catch(console.error), config.processWebhookEventsIntervalMs);
   }
 });
