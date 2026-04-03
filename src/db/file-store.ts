@@ -128,6 +128,10 @@ export class FileStore {
     if (!current) return undefined;
     const next = updater(current);
     this.state.writeConfirmations[confirmationId] = next;
+    this.persist();
+    return next;
+  }
+
   recordProductCreateConfirmation(record: ProductCreateConfirmation) {
     this.state.productCreateConfirmations[record.confirmationId] = record;
     this.persist();
