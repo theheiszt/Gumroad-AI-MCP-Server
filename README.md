@@ -1,4 +1,4 @@
-# Gumroad Personal Automation + MCP Server
+# Personal Automation + MCP Server
 
 A headless, single-owner Gumroad automation service with an MCP-compatible endpoint at `/mcp`.
 
