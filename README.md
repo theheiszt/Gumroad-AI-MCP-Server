@@ -59,6 +59,7 @@ Routes:
 - `POST /admin/licenses/verify`
 - `POST /admin/writes/preview`
 - `POST /admin/writes/confirm`
+- `POST /admin/checkout-links/generate`
 - `GET /admin/write-actions?limit=50`
 - `GET /admin/products/:productId/variants` *(canonical read endpoint)*
 - `GET /admin/products/:productId/offer-codes` *(canonical read endpoint)*
@@ -255,6 +256,78 @@ curl -X POST http://localhost:80/admin/licenses/verify \
   -H "Content-Type: application/json" \
   -d '{"productId":"abc123","licenseKey":"XXXX-XXXX-XXXX"}'
 ```
+
+### Generate checkout links (promotion + fulfillment)
+
+Create direct checkout URLs with prefilled purchase options:
+
+```bash
+curl -X POST http://localhost:80/admin/checkout-links/generate \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "productId": "abc123",
+    "options": {
+      "wanted": true,
+      "email": "buyer@example.com",
+      "price": 1999,
+      "quantity": 2,
+      "variant": "tier_pro",
+      "frequency": "yearly",
+      "referrer": "spring_campaign",
+      "discountCode": "SPRING20"
+    }
+  }'
+```
+
+You can also pass `product` directly when the product is not in cache:
+
+```json
+{
+  "product": {
+    "id": "abc123",
+    "name": "My Membership",
+    "permalink": "https://gumroad.com/l/my-membership"
+  },
+  "options": {
+    "frequency": "monthly",
+    "variant": "starter"
+  }
+}
+```
+
+The API response includes both machine-readable data and a copy-paste ready URL string:
+
+```json
+{
+  "ok": true,
+  "checkout": {
+    "baseUrl": "https://gumroad.com",
+    "path": "/l/my-membership/SPRING20",
+    "query": {
+      "wanted": "true",
+      "email": "buyer@example.com",
+      "price": "1999",
+      "quantity": "2",
+      "variant": "tier_pro",
+      "frequency": "yearly",
+      "referrer": "spring_campaign"
+    },
+    "url": "https://gumroad.com/l/my-membership/SPRING20?wanted=true&email=buyer%40example.com&price=1999&quantity=2&variant=tier_pro&frequency=yearly&referrer=spring_campaign",
+    "copyPaste": "https://gumroad.com/l/my-membership/SPRING20?wanted=true&email=buyer%40example.com&price=1999&quantity=2&variant=tier_pro&frequency=yearly&referrer=spring_campaign"
+  },
+  "output": {
+    "text": "https://gumroad.com/l/my-membership/SPRING20?wanted=true&email=buyer%40example.com&price=1999&quantity=2&variant=tier_pro&frequency=yearly&referrer=spring_campaign"
+  }
+}
+```
+
+Sample URL patterns supported by `buildCheckoutUrl(product, options)`:
+
+- direct checkout: `https://gumroad.com/l/my-product`
+- with membership frequency: `https://gumroad.com/l/my-membership?frequency=monthly`
+- with specific variant/tier: `https://gumroad.com/l/my-product?variant=tier_pro`
+- with discount path + wanted mode: `https://gumroad.com/l/my-product/SPRING20?wanted=true`
 
 ### Preview catalog action (required phase 1)
 

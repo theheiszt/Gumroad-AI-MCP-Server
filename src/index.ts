@@ -5,6 +5,7 @@ import { normalizeWebhookEvent } from "./gumroad/normalize.js";
 import { dailySummaryJob, processPendingWebhookEvents, processWebhookEvent, syncProductsJob, syncSalesJob } from "./jobs/index.js";
 import { handleMcpRequest } from "./mcp.js";
 import { createAppContext } from "./services/app-context.js";
+import { buildCheckoutUrl, parseCheckoutLinkRequest } from "./services/checkout-links.js";
 import { confirmCatalogAction, previewCatalogAction, readProductOfferCodes, readProductVariants } from "./services/catalog-management.js";
 import { confirmProductCreate, previewProductCreate, refreshOfferCodes, refreshVariants } from "./services/product-create.js";
 import { formatMoney } from "./utils/format.js";
@@ -189,6 +190,28 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const productId = url.pathname.split("/")[3];
       const product = ctx.store.getProduct(productId);
       return sendJson(res, 200, { productId, offerCodes: product?.offerCodes ?? [] });
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/checkout-links/generate") {
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const input = parseCheckoutLinkRequest(body);
+        const product = input.product ?? ctx.store.getProduct(input.productId ?? "");
+        if (!product) {
+          return sendJson(res, 404, { ok: false, error: "Product not found. Provide product or valid productId." });
+        }
+
+        const checkout = buildCheckoutUrl(product, input.options ?? {});
+        return sendJson(res, 200, {
+          ok: true,
+          checkout,
+          output: {
+            text: checkout.copyPaste,
+          },
+        });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
     }
 
     if (req.method === "POST" && /^\/admin\/products\/[^/]+\/variants\/refresh$/.test(url.pathname)) {
