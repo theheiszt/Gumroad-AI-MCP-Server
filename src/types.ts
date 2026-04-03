@@ -112,6 +112,20 @@ export type WriteActionLog = {
 export type WriteConfirmation = {
   confirmationId: string;
   actionType: string;
+export type ProductCreateDraft = {
+  name: string;
+  description?: string;
+  priceCents: number;
+  currency: string;
+  published?: boolean;
+  customSummary?: string;
+  customReceipt?: string;
+  tags?: string[];
+};
+
+export type ProductCreateConfirmation = {
+  confirmationId: string;
+  actionType: "product_create";
   payloadHash: string;
   expiresAt: string;
   status: ConfirmationStatus;
@@ -120,10 +134,13 @@ export type WriteConfirmation = {
   requiresPhrase: boolean;
   productId?: string;
   requestPayload: Record<string, string>;
+  input: ProductCreateDraft;
+  apiPayload: Record<string, string>;
   preview: string;
   result?: {
     executedAt: string;
     response: Record<string, unknown>;
+    productId?: string;
   };
   error?: string;
 };
@@ -135,6 +152,7 @@ export type StoreState = {
   licenseChecks: LicenseCheck[];
   jobRuns: JobRun[];
   writeConfirmations: Record<string, WriteConfirmation>;
+  productCreateConfirmations: Record<string, ProductCreateConfirmation>;
   writeActions: WriteActionLog[];
   meta: {
     createdAt: string;

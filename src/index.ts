@@ -7,6 +7,7 @@ import { handleMcpRequest } from "./mcp.js";
 import { createAppContext } from "./services/app-context.js";
 import { UnsupportedGumroadOperationError } from "./gumroad/client.js";
 import { confirmWriteOperation, previewWriteOperation, refreshProductCatalog } from "./services/write-confirmation.js";
+import { confirmProductCreate, previewProductCreate } from "./services/product-create.js";
 import { formatMoney } from "./utils/format.js";
 import {
   parseBody,
@@ -270,6 +271,24 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
               ? 404
               : 400;
         return sendJson(res, status, { ok: false, action_type: "confirm_write", error: message });
+    if (req.method === "POST" && url.pathname === "/admin/products/preview_product_create") {
+      const rawBody = await readRawBody(req);
+      const body = parseBody(req.headers["content-type"], rawBody);
+      try {
+        const result = previewProductCreate(ctx, body);
+        return sendJson(res, 200, {
+          ok: true,
+          action_type: "preview_product_create",
+          confirmation_id: result.confirmation.confirmationId,
+          expires_at: result.confirmation.expiresAt,
+          payload_hash: result.confirmation.payloadHash,
+          status: result.confirmation.status,
+          requires_confirmation_phrase: result.confirmation.requiresPhrase,
+          preview: result.preview,
+          request_payload: result.confirmation.apiPayload,
+        });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
     }
 
@@ -279,6 +298,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const body = parseBody(req.headers["content-type"], rawBody);
       try {
         const result = await confirmWriteOperation(ctx, body);
+        const result = await confirmProductCreate(ctx, body);
         return sendJson(res, 200, result);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
