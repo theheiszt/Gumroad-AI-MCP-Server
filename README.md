@@ -61,14 +61,12 @@ Routes:
 - `POST /admin/writes/preview`
 - `POST /admin/writes/confirm`
 - `GET /admin/write-actions?limit=50`
-- `GET /admin/products/variants?productId=<id>`
-- `GET /admin/products/offer-codes?productId=<id>`
+- `GET /admin/products/:productId/variants` *(canonical read endpoint)*
+- `GET /admin/products/:productId/offer-codes` *(canonical read endpoint)*
+- `GET /admin/products/variants?productId=<id>` *(deprecated)*
+- `GET /admin/products/offer-codes?productId=<id>` *(deprecated)*
 - `POST /admin/products/preview_product_create`
 - `POST /admin/products/confirm_product_create`
-- `GET /admin/write-actions?limit=50`
-- `POST /admin/writes/confirm`
-- `GET /admin/products/:productId/variants`
-- `GET /admin/products/:productId/offer-codes`
 - `POST /admin/products/:productId/variants/refresh`
 - `POST /admin/products/:productId/offer-codes/refresh`
 - `POST /admin/variants/categories/preview_create`

@@ -31,6 +31,7 @@ Two endpoint patterns exist for each resource:
 Both sets return similar data and partially overlap in purpose.
 
 **Impact:** Medium (API surface bloat + client confusion)
+**Direction:** Keep path-param routes as canonical read API and document query-param routes as deprecated compatibility endpoints.
 
 ### 3) README endpoint list duplicates
 
