@@ -98,6 +98,23 @@ export type JobRun = {
   details?: Record<string, unknown>;
 };
 
+export type WriteConfirmationStatus = "pending" | "executing" | "completed" | "expired" | "failed";
+
+export type WriteActionType =
+  | "product_create"
+  | "variant_category_create"
+  | "variant_category_edit"
+  | "variant_category_delete"
+  | "variant_create"
+  | "variant_edit"
+  | "variant_delete"
+  | "offer_code_create"
+  | "offer_code_delete"
+  | "offer_code_disable";
+
+export type WriteActionLog = {
+  id: string;
+  actionType: WriteActionType;
 export type ConfirmationStatus = "pending" | "executing" | "completed" | "expired" | "failed";
 
 export type WriteActionType =

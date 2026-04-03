@@ -26,6 +26,33 @@ function numberOrFallback(value: string | null | undefined, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function confirmationErrorStatus(message: string) {
+  if (message.includes("already been used")) return 409;
+  if (message.includes("not found")) return 404;
+  if (message.includes("Unsupported operation") || message.includes("Unsupported action")) return 501;
+  return 400;
+}
+
+function publicConfirmation(result: {
+  confirmationId: string;
+  expiresAt: string;
+  payloadHash: string;
+  status: string;
+  requiresPhrase: boolean;
+  preview: string;
+  apiPayload: Record<string, string>;
+}) {
+  return {
+    confirmation_id: result.confirmationId,
+    expires_at: result.expiresAt,
+    payload_hash: result.payloadHash,
+    status: result.status,
+    requires_confirmation_phrase: result.requiresPhrase,
+    preview: result.preview,
+    request_payload: result.apiPayload,
+  };
+}
+
 async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   if (!req.url) return sendJson(res, 400, { error: "Missing URL" });
   const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
@@ -131,6 +158,32 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "GET" && url.pathname === "/admin/products") {
       const products = ctx.store.listProducts();
       return sendJson(res, 200, { count: products.length, products });
+    }
+
+    if (req.method === "GET" && /^\/admin\/products\/[^/]+\/variants$/.test(url.pathname)) {
+      const productId = url.pathname.split("/")[3];
+      const product = ctx.store.getProduct(productId);
+      return sendJson(res, 200, { productId, variants: product?.variants ?? [] });
+    }
+
+    if (req.method === "GET" && /^\/admin\/products\/[^/]+\/offer-codes$/.test(url.pathname)) {
+      const productId = url.pathname.split("/")[3];
+      const product = ctx.store.getProduct(productId);
+      return sendJson(res, 200, { productId, offerCodes: product?.offerCodes ?? [] });
+    }
+
+    if (req.method === "POST" && /^\/admin\/products\/[^/]+\/variants\/refresh$/.test(url.pathname)) {
+      assertConfiguredAccessToken();
+      const productId = url.pathname.split("/")[3];
+      const variants = await refreshVariants(ctx, productId);
+      return sendJson(res, 200, { ok: true, productId, count: variants.length, variants });
+    }
+
+    if (req.method === "POST" && /^\/admin\/products\/[^/]+\/offer-codes\/refresh$/.test(url.pathname)) {
+      assertConfiguredAccessToken();
+      const productId = url.pathname.split("/")[3];
+      const offerCodes = await refreshOfferCodes(ctx, productId);
+      return sendJson(res, 200, { ok: true, productId, count: offerCodes.length, offerCodes });
     }
 
     if (req.method === "GET" && url.pathname === "/admin/sales") {
@@ -253,6 +306,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const rawBody = await readRawBody(req);
       const body = parseBody(req.headers["content-type"], rawBody);
       try {
+        const result = previewProductCreate(body, ctx);
+        return sendJson(res, 200, {
+          ok: true,
+          action_type: "preview_product_create",
+          confirmation_id: result.confirmationId,
+          expires_at: result.expiresAt,
+          payload_hash: result.payloadHash,
+          status: result.status,
+          requires_confirmation_phrase: result.requiresPhrase,
+          preview: result.preview,
+          request_payload: result.apiPayload,
         const result = previewProductCreate(ctx, body);
         return sendJson(res, 200, {
           ok: true,
@@ -288,12 +352,119 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const rawBody = await readRawBody(req);
       const body = parseBody(req.headers["content-type"], rawBody);
       try {
+        const result = await confirmWrite(ctx, body);
+        return sendJson(res, 200, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const status = confirmationErrorStatus(message);
         const result = await confirmProductCreate(ctx, body);
         return sendJson(res, 200, result);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const status = message.includes("already been used") ? 409 : message.includes("not found") ? 404 : 400;
         return sendJson(res, status, { ok: false, action_type: "confirm_product_create", error: message });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/variants/categories/preview_create") {
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const result = previewVariantCategoryCreate(body, ctx);
+        return sendJson(res, 200, { ok: true, action_type: "variant_category_create", ...publicConfirmation(result) });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/variants/categories/preview_edit") {
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const result = previewVariantCategoryEdit(body, ctx);
+        return sendJson(res, 200, { ok: true, action_type: "variant_category_edit", ...publicConfirmation(result) });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/variants/categories/preview_delete") {
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const result = previewVariantCategoryDelete(body, ctx);
+        return sendJson(res, 200, { ok: true, action_type: "variant_category_delete", ...publicConfirmation(result) });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/variants/preview_create") {
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const result = previewVariantCreate(body, ctx);
+        return sendJson(res, 200, { ok: true, action_type: "variant_create", ...publicConfirmation(result) });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/variants/preview_edit") {
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const result = previewVariantEdit(body, ctx);
+        return sendJson(res, 200, { ok: true, action_type: "variant_edit", ...publicConfirmation(result) });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/variants/preview_delete") {
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const result = previewVariantDelete(body, ctx);
+        return sendJson(res, 200, { ok: true, action_type: "variant_delete", ...publicConfirmation(result) });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/offer-codes/preview_create") {
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const result = previewOfferCodeCreate(body, ctx);
+        return sendJson(res, 200, { ok: true, action_type: "offer_code_create", ...publicConfirmation(result) });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/offer-codes/preview_delete") {
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const result = previewOfferCodeDelete(body, ctx);
+        return sendJson(res, 200, { ok: true, action_type: "offer_code_delete", ...publicConfirmation(result) });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/offer-codes/preview_disable") {
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const result = previewOfferCodeDisable(body, ctx);
+        return sendJson(res, 200, { ok: true, action_type: "offer_code_disable", ...publicConfirmation(result) });
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/writes/confirm") {
+      assertConfiguredAccessToken();
+      const body = parseBody(req.headers["content-type"], await readRawBody(req));
+      try {
+        const result = await confirmWrite(ctx, body);
+        return sendJson(res, 200, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return sendJson(res, confirmationErrorStatus(message), { ok: false, action_type: "confirm_write", error: message });
       }
     }
 
