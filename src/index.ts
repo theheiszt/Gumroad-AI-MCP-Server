@@ -6,7 +6,7 @@ import { dailySummaryJob, processWebhookEvent, syncProductsJob, syncSalesJob } f
 import { handleMcpRequest } from "./mcp.js";
 import { createAppContext } from "./services/app-context.js";
 import { confirmCatalogAction, previewCatalogAction, readProductOfferCodes, readProductVariants } from "./services/catalog-management.js";
-import { confirmProductCreate, previewProductCreate } from "./services/product-create.js";
+import { confirmProductCreate, previewProductCreate, refreshOfferCodes, refreshVariants } from "./services/product-create.js";
 import { formatMoney } from "./utils/format.js";
 import {
   parseBody,
@@ -306,17 +306,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const rawBody = await readRawBody(req);
       const body = parseBody(req.headers["content-type"], rawBody);
       try {
-        const result = previewProductCreate(body, ctx);
-        return sendJson(res, 200, {
-          ok: true,
-          action_type: "preview_product_create",
-          confirmation_id: result.confirmationId,
-          expires_at: result.expiresAt,
-          payload_hash: result.payloadHash,
-          status: result.status,
-          requires_confirmation_phrase: result.requiresPhrase,
-          preview: result.preview,
-          request_payload: result.apiPayload,
         const result = previewProductCreate(ctx, body);
         return sendJson(res, 200, {
           ok: true,
@@ -352,16 +341,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const rawBody = await readRawBody(req);
       const body = parseBody(req.headers["content-type"], rawBody);
       try {
-        const result = await confirmWrite(ctx, body);
-        return sendJson(res, 200, result);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const status = confirmationErrorStatus(message);
         const result = await confirmProductCreate(ctx, body);
         return sendJson(res, 200, result);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const status = message.includes("already been used") ? 409 : message.includes("not found") ? 404 : 400;
+        const status = confirmationErrorStatus(message);
         return sendJson(res, status, { ok: false, action_type: "confirm_product_create", error: message });
       }
     }
@@ -369,8 +353,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "POST" && url.pathname === "/admin/variants/categories/preview_create") {
       const body = parseBody(req.headers["content-type"], await readRawBody(req));
       try {
-        const result = previewVariantCategoryCreate(body, ctx);
-        return sendJson(res, 200, { ok: true, action_type: "variant_category_create", ...publicConfirmation(result) });
+        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_category_create" });
+        return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
@@ -379,8 +363,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "POST" && url.pathname === "/admin/variants/categories/preview_edit") {
       const body = parseBody(req.headers["content-type"], await readRawBody(req));
       try {
-        const result = previewVariantCategoryEdit(body, ctx);
-        return sendJson(res, 200, { ok: true, action_type: "variant_category_edit", ...publicConfirmation(result) });
+        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_category_edit" });
+        return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
@@ -389,8 +373,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "POST" && url.pathname === "/admin/variants/categories/preview_delete") {
       const body = parseBody(req.headers["content-type"], await readRawBody(req));
       try {
-        const result = previewVariantCategoryDelete(body, ctx);
-        return sendJson(res, 200, { ok: true, action_type: "variant_category_delete", ...publicConfirmation(result) });
+        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_category_delete" });
+        return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
@@ -399,8 +383,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "POST" && url.pathname === "/admin/variants/preview_create") {
       const body = parseBody(req.headers["content-type"], await readRawBody(req));
       try {
-        const result = previewVariantCreate(body, ctx);
-        return sendJson(res, 200, { ok: true, action_type: "variant_create", ...publicConfirmation(result) });
+        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_create" });
+        return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
@@ -409,8 +393,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "POST" && url.pathname === "/admin/variants/preview_edit") {
       const body = parseBody(req.headers["content-type"], await readRawBody(req));
       try {
-        const result = previewVariantEdit(body, ctx);
-        return sendJson(res, 200, { ok: true, action_type: "variant_edit", ...publicConfirmation(result) });
+        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_edit" });
+        return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
@@ -419,8 +403,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "POST" && url.pathname === "/admin/variants/preview_delete") {
       const body = parseBody(req.headers["content-type"], await readRawBody(req));
       try {
-        const result = previewVariantDelete(body, ctx);
-        return sendJson(res, 200, { ok: true, action_type: "variant_delete", ...publicConfirmation(result) });
+        const result = previewCatalogAction(ctx, { ...body, action_type: "variant_delete" });
+        return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
@@ -429,8 +413,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "POST" && url.pathname === "/admin/offer-codes/preview_create") {
       const body = parseBody(req.headers["content-type"], await readRawBody(req));
       try {
-        const result = previewOfferCodeCreate(body, ctx);
-        return sendJson(res, 200, { ok: true, action_type: "offer_code_create", ...publicConfirmation(result) });
+        const result = previewCatalogAction(ctx, { ...body, action_type: "offer_code_create" });
+        return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
@@ -439,8 +423,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "POST" && url.pathname === "/admin/offer-codes/preview_delete") {
       const body = parseBody(req.headers["content-type"], await readRawBody(req));
       try {
-        const result = previewOfferCodeDelete(body, ctx);
-        return sendJson(res, 200, { ok: true, action_type: "offer_code_delete", ...publicConfirmation(result) });
+        const result = previewCatalogAction(ctx, { ...body, action_type: "offer_code_delete" });
+        return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
@@ -449,8 +433,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "POST" && url.pathname === "/admin/offer-codes/preview_disable") {
       const body = parseBody(req.headers["content-type"], await readRawBody(req));
       try {
-        const result = previewOfferCodeDisable(body, ctx);
-        return sendJson(res, 200, { ok: true, action_type: "offer_code_disable", ...publicConfirmation(result) });
+        const result = previewCatalogAction(ctx, { ...body, action_type: "offer_code_disable" });
+        return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
