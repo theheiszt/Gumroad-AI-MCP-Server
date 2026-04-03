@@ -5,6 +5,8 @@ import { normalizeWebhookEvent, deriveSaleFromWebhook } from "./gumroad/normaliz
 import { dailySummaryJob, processWebhookEvent, syncProductsJob, syncSalesJob } from "./jobs/index.js";
 import { handleMcpRequest } from "./mcp.js";
 import { createAppContext } from "./services/app-context.js";
+import { UnsupportedGumroadOperationError } from "./gumroad/client.js";
+import { confirmWriteOperation, previewWriteOperation, refreshProductCatalog } from "./services/write-confirmation.js";
 import { confirmProductCreate, previewProductCreate } from "./services/product-create.js";
 import { formatMoney } from "./utils/format.js";
 import {
@@ -221,6 +223,54 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       return sendJson(res, 200, { ok: true, result });
     }
 
+    if (req.method === "POST" && url.pathname === "/admin/writes/preview") {
+      const rawBody = await readRawBody(req);
+      const body = parseBody(req.headers["content-type"], rawBody);
+      try {
+        const result = previewWriteOperation(ctx, body);
+        return sendJson(res, 200, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const status = error instanceof UnsupportedGumroadOperationError ? 501 : 400;
+        return sendJson(res, status, { ok: false, action_type: "preview_write", error: message });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/products/preview_product_create") {
+      const rawBody = await readRawBody(req);
+      const input = parseBody(req.headers["content-type"], rawBody);
+      try {
+        return sendJson(
+          res,
+          200,
+          previewWriteOperation(ctx, {
+            action_type: "product_create",
+            input,
+          }),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return sendJson(res, 400, { ok: false, action_type: "preview_product_create", error: message });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/writes/confirm") {
+      assertConfiguredAccessToken();
+      const rawBody = await readRawBody(req);
+      const body = parseBody(req.headers["content-type"], rawBody);
+      try {
+        const result = await confirmWriteOperation(ctx, body);
+        return sendJson(res, 200, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const status = error instanceof UnsupportedGumroadOperationError
+          ? 501
+          : message.includes("already been used")
+            ? 409
+            : message.includes("not found")
+              ? 404
+              : 400;
+        return sendJson(res, status, { ok: false, action_type: "confirm_write", error: message });
     if (req.method === "POST" && url.pathname === "/admin/products/preview_product_create") {
       const rawBody = await readRawBody(req);
       const body = parseBody(req.headers["content-type"], rawBody);
@@ -247,6 +297,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const rawBody = await readRawBody(req);
       const body = parseBody(req.headers["content-type"], rawBody);
       try {
+        const result = await confirmWriteOperation(ctx, body);
         const result = await confirmProductCreate(ctx, body);
         return sendJson(res, 200, result);
       } catch (error) {
@@ -254,6 +305,33 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
         const status = message.includes("already been used") ? 409 : message.includes("not found") ? 404 : 400;
         return sendJson(res, status, { ok: false, action_type: "confirm_product_create", error: message });
       }
+    }
+
+    if (req.method === "GET" && url.pathname === "/admin/products/variants") {
+      assertConfiguredAccessToken();
+      const productId = url.searchParams.get("product_id") ?? "";
+      if (!productId) return sendJson(res, 400, { error: "product_id is required." });
+      const product = ctx.store.getProduct(productId);
+      if (!product) return sendJson(res, 404, { error: "Product not found in local store. Run product sync first." });
+      const refreshed = await refreshProductCatalog(ctx, productId);
+      return sendJson(res, 200, {
+        product_id: productId,
+        variant_categories: refreshed.variantCategories,
+        variants: refreshed.variants,
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/admin/products/offer-codes") {
+      assertConfiguredAccessToken();
+      const productId = url.searchParams.get("product_id") ?? "";
+      if (!productId) return sendJson(res, 400, { error: "product_id is required." });
+      const product = ctx.store.getProduct(productId);
+      if (!product) return sendJson(res, 404, { error: "Product not found in local store. Run product sync first." });
+      const refreshed = await refreshProductCatalog(ctx, productId);
+      return sendJson(res, 200, {
+        product_id: productId,
+        offer_codes: refreshed.offerCodes,
+      });
     }
 
     return sendJson(res, 404, { error: "Admin route not found." });

@@ -3,6 +3,16 @@ import { dirname } from "node:path";
 import type {
   JobRun,
   LicenseCheck,
+  OfferCode,
+  Product,
+  ProductVariant,
+  Sale,
+  SalesSummary,
+  StoreState,
+  VariantCategory,
+  WebhookEvent,
+  WriteActionLog,
+  WriteConfirmation,
   Product,
   ProductCreateConfirmation,
   Sale,
@@ -21,6 +31,7 @@ function createEmptyState(): StoreState {
     webhookEvents: {},
     licenseChecks: [],
     jobRuns: [],
+    writeConfirmations: {},
     productCreateConfirmations: {},
     writeActions: [],
     meta: {
@@ -41,7 +52,12 @@ export class FileStore {
   private read(): StoreState {
     try {
       const raw = readFileSync(this.filePath, "utf8");
-      return { ...createEmptyState(), ...(JSON.parse(raw) as StoreState) };
+      const parsed = JSON.parse(raw) as StoreState & { productCreateConfirmations?: Record<string, WriteConfirmation> };
+      const migrated = {
+        ...parsed,
+        writeConfirmations: parsed.writeConfirmations ?? parsed.productCreateConfirmations ?? {},
+      };
+      return { ...createEmptyState(), ...migrated };
     } catch {
       return createEmptyState();
     }
@@ -60,7 +76,10 @@ export class FileStore {
 
   upsertProducts(products: Product[]) {
     for (const product of products) {
-      this.state.products[product.id] = product;
+      this.state.products[product.id] = {
+        ...this.state.products[product.id],
+        ...product,
+      };
     }
     this.state.meta.lastProductSyncAt = isoNow();
     this.persist();
@@ -81,6 +100,15 @@ export class FileStore {
     }
 
     this.state.meta.lastSalesSyncAt = isoNow();
+    this.persist();
+  }
+
+  attachProductCatalog(productId: string, args: { variantCategories: VariantCategory[]; variants: ProductVariant[]; offerCodes: OfferCode[] }) {
+    const product = this.state.products[productId];
+    if (!product) return;
+    product.variantCategories = args.variantCategories;
+    product.variants = args.variants;
+    product.offerCodes = args.offerCodes;
     this.persist();
   }
 
@@ -108,6 +136,20 @@ export class FileStore {
     this.persist();
   }
 
+  recordWriteConfirmation(record: WriteConfirmation) {
+    this.state.writeConfirmations[record.confirmationId] = record;
+    this.persist();
+  }
+
+  getWriteConfirmation(confirmationId: string) {
+    return this.state.writeConfirmations[confirmationId];
+  }
+
+  updateWriteConfirmation(confirmationId: string, updater: (current: WriteConfirmation) => WriteConfirmation) {
+    const current = this.state.writeConfirmations[confirmationId];
+    if (!current) return undefined;
+    const next = updater(current);
+    this.state.writeConfirmations[confirmationId] = next;
 
   recordProductCreateConfirmation(record: ProductCreateConfirmation) {
     this.state.productCreateConfirmations[record.confirmationId] = record;
@@ -142,6 +184,10 @@ export class FileStore {
 
   listProducts() {
     return Object.values(this.state.products).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  getProduct(productId: string) {
+    return this.state.products[productId];
   }
 
   listSales(limit = 50, after?: string) {

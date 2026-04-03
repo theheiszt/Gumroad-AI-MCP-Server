@@ -60,6 +60,10 @@ Routes:
 - `POST /admin/licenses/verify`
 - `POST /admin/products/preview_product_create`
 - `POST /admin/products/confirm_product_create`
+- `POST /admin/writes/preview`
+- `POST /admin/writes/confirm`
+- `GET /admin/products/variants?product_id=<id>`
+- `GET /admin/products/offer-codes?product_id=<id>`
 - `GET /admin/write-actions?limit=50`
 
 ## MCP tools
@@ -245,6 +249,57 @@ Example response:
     }
   }
 }
+```
+
+### Generic write preview/confirm (variants + offer codes)
+
+Preview (example: create variant category):
+
+```bash
+curl -X POST http://localhost:8788/admin/writes/preview \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action_type":"variant_category_create",
+    "input":{"product_id":"prod_123","name":"Edition"}
+  }'
+```
+
+Confirm:
+
+```bash
+curl -X POST http://localhost:8788/admin/writes/confirm \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"confirmation_id":"confirm_write_xxx","confirmation_phrase":"CONFIRM CREATE"}'
+```
+
+Supported `action_type` values:
+
+- `product_create`
+- `variant_category_create`
+- `variant_category_edit`
+- `variant_category_delete`
+- `variant_create`
+- `variant_edit`
+- `variant_delete`
+- `offer_code_create`
+- `offer_code_delete`
+
+Unsupported (fails loudly with `501`):
+
+- `offer_code_disable`
+
+### Read variant and offer-code data
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://localhost:8788/admin/products/variants?product_id=prod_123"
+```
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://localhost:8788/admin/products/offer-codes?product_id=prod_123"
 ```
 
 ## Suggested deployment pattern
