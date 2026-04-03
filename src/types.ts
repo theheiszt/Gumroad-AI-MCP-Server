@@ -116,9 +116,6 @@ export type WriteActionType =
 export type WriteActionLog = {
   id: string;
   actionType: WriteActionType;
-export type WriteActionLog = {
-  id: string;
-  actionType: string;
   status: "attempted" | "completed" | "failed";
   at: string;
   confirmationId?: string;
@@ -128,6 +125,26 @@ export type WriteActionLog = {
 export type WriteConfirmation = {
   confirmationId: string;
   actionType: WriteActionType;
+  payloadHash: string;
+  expiresAt: string;
+  status: ConfirmationStatus;
+  createdAt: string;
+  updatedAt: string;
+  requiresPhrase: boolean;
+  input: Record<string, unknown>;
+  apiRequest: {
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+    path: string;
+    payload?: Record<string, string>;
+  };
+  preview: string;
+  result?: {
+    executedAt: string;
+    response: Record<string, unknown>;
+  };
+  error?: string;
+};
+
 export type ProductCreateDraft = {
   name: string;
   description?: string;
@@ -148,12 +165,6 @@ export type ProductCreateConfirmation = {
   createdAt: string;
   updatedAt: string;
   requiresPhrase: boolean;
-  input: Record<string, unknown>;
-  apiRequest: {
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-    path: string;
-    payload?: Record<string, string>;
-  };
   input: ProductCreateDraft;
   apiPayload: Record<string, string>;
   preview: string;
