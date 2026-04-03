@@ -63,6 +63,9 @@ Routes:
 - `GET /admin/write-actions?limit=50`
 - `GET /admin/products/variants?productId=<id>`
 - `GET /admin/products/offer-codes?productId=<id>`
+- `POST /admin/products/preview_product_create`
+- `POST /admin/products/confirm_product_create`
+- `GET /admin/write-actions?limit=50`
 
 ## MCP tools
 
@@ -185,6 +188,21 @@ curl -X POST http://localhost:8788/admin/writes/preview \
     "action_type":"variant_category_create",
     "product_id":"abc123",
     "name":"Size"
+### Preview product creation (required phase 1)
+
+```bash
+curl -X POST http://localhost:8788/admin/products/preview_product_create \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":"Creator Toolkit",
+    "description":"Templates + prompts",
+    "price_cents":2900,
+    "currency":"USD",
+    "published":false,
+    "custom_summary":"Thanks for buying Creator Toolkit.",
+    "custom_receipt":"Need help? Reply to this receipt.",
+    "tags":["creator","templates"]
   }'
 ```
 
@@ -195,6 +213,8 @@ Example response:
   "ok": true,
   "action_type": "variant_category_create",
   "confirmation_id": "confirm_write_xxx",
+  "action_type": "preview_product_create",
+  "confirmation_id": "confirm_prod_create_xxx",
   "expires_at": "2026-04-03T12:00:00.000Z",
   "payload_hash": "1f...",
   "status": "pending",
@@ -218,6 +238,28 @@ curl -X POST http://localhost:8788/admin/writes/confirm \
   -H "Content-Type: application/json" \
   -d '{
     "confirmation_id":"confirm_write_xxx",
+  "preview": "Product: Creator Toolkit\nPrice: 2900 USD\n...",
+  "request_payload": {
+    "name": "Creator Toolkit",
+    "price": "2900",
+    "currency": "usd",
+    "description": "Templates + prompts",
+    "published": "false",
+    "custom_summary": "Thanks for buying Creator Toolkit.",
+    "custom_receipt": "Need help? Reply to this receipt.",
+    "tags": "creator,templates"
+  }
+}
+```
+
+### Confirm product creation (required phase 2)
+
+```bash
+curl -X POST http://localhost:8788/admin/products/confirm_product_create \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "confirmation_id":"confirm_prod_create_xxx",
     "confirmation_phrase":"CONFIRM CREATE"
   }'
 ```
@@ -231,6 +273,16 @@ Example response:
   "status": "completed",
   "full_response": {
     "success": true
+  "confirmation_id": "confirm_prod_create_xxx",
+  "action_type": "product_create",
+  "status": "completed",
+  "product_id": "abc123",
+  "summary": "Product creation completed for \"Creator Toolkit\".",
+  "full_response": {
+    "success": true,
+    "product": {
+      "id": "abc123"
+    }
   }
 }
 ```
@@ -271,5 +323,8 @@ Stored data includes:
 ## Unsupported endpoints
 
 - `offer_code_disable` and `offer_code_delete` intentionally fail fast with a clear error because the current API wrapper does not expose reliable endpoints for those operations.
+- Preview stores a pending confirmation record with `confirmation_id`, `payload_hash`, and `expires_at`.
+- Confirm moves the record to `executing` before any API call, so reuse of the same `confirmation_id` returns an error and avoids double-submit.
+- Every attempted/completed/failed write is persisted in `writeActions`, and confirm stores the full Gumroad API response in the confirmation result.
 
 If you want a stronger production backend later, the clean next step is swapping `FileStore` for SQLite or Postgres without changing the Gumroad client or MCP tool surface.

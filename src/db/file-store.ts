@@ -5,6 +5,7 @@ import type {
   LicenseCheck,
   Product,
   WriteConfirmation,
+  ProductCreateConfirmation,
   Sale,
   SalesSummary,
   StoreState,
@@ -22,6 +23,7 @@ function createEmptyState(): StoreState {
     licenseChecks: [],
     jobRuns: [],
     writeConfirmations: {},
+    productCreateConfirmations: {},
     writeActions: [],
     meta: {
       createdAt: now,
@@ -126,6 +128,23 @@ export class FileStore {
     if (!current) return undefined;
     const next = updater(current);
     this.state.writeConfirmations[confirmationId] = next;
+  recordProductCreateConfirmation(record: ProductCreateConfirmation) {
+    this.state.productCreateConfirmations[record.confirmationId] = record;
+    this.persist();
+  }
+
+  getProductCreateConfirmation(confirmationId: string) {
+    return this.state.productCreateConfirmations[confirmationId];
+  }
+
+  updateProductCreateConfirmation(
+    confirmationId: string,
+    updater: (current: ProductCreateConfirmation) => ProductCreateConfirmation,
+  ) {
+    const current = this.state.productCreateConfirmations[confirmationId];
+    if (!current) return undefined;
+    const next = updater(current);
+    this.state.productCreateConfirmations[confirmationId] = next;
     this.persist();
     return next;
   }
