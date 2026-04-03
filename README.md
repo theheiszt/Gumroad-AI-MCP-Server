@@ -52,11 +52,13 @@ Routes:
 - `GET /admin/sales?limit=50&after=2026-04-01T00:00:00Z`
 - `GET /admin/summary?days=7`
 - `GET /admin/events?limit=50`
+- `GET /admin/events/gumroad-sales?limit=50`
 - `GET /admin/jobs?limit=20`
 - `GET /admin/licenses?limit=20`
 - `POST /admin/jobs/sync-products`
 - `POST /admin/jobs/sync-sales`
 - `POST /admin/jobs/daily-summary`
+- `POST /admin/jobs/process-webhooks`
 - `POST /admin/licenses/verify`
 - `POST /admin/writes/preview`
 - `POST /admin/writes/confirm`
@@ -156,10 +158,16 @@ This is intentionally simple. It is a **minimal shim**, not a full OAuth app.
 
 ## Webhook notes
 
-Webhook verification is intentionally conservative because Gumroad setups vary. The handler supports:
+Webhook verification is pluggable because Gumroad setups vary. Configure `GUMROAD_WEBHOOK_VERIFICATION_MODE` as `auto` (default), `header-hmac`, or `body-secret`.
+
+The handler supports:
 
 - HMAC verification from `x-gumroad-signature` when present
 - fallback shared-secret matching from body fields like `secret`, `token`, `ping_secret`, or `password`
+
+Webhook ingestion stores events first and processes them asynchronously in the background processor (`process-webhooks`) so failures are visible and retryable. Events are marked `pending`, `processed`, or `failed` with timestamps/attempt counters.
+
+Normalized Gumroad Ping sale records are persisted and include fields such as `sale_id`, `sale_timestamp`, `order_number`, `seller_id`, `product_id`, `product_name`, `email`, `price`, `recurrence`, `variants`, `license_key`, `quantity`, and `refunded`.
 
 If your Gumroad Ping setup uses a different verification convention, adjust `verifyWebhookRequest()` in `src/utils/http.ts`.
 

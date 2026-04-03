@@ -1,0 +1,16 @@
+{
+  "sale_id": "sale_12345",
+  "sale_timestamp": "2026-04-03T10:15:00Z",
+  "order_number": "ORD-1001",
+  "seller_id": "seller_abc",
+  "product_id": "prod_001",
+  "product_name": "Creator Toolkit",
+  "email": "buyer@example.com",
+  "price": "2900",
+  "recurrence": "none",
+  "variants": "Tier:Pro",
+  "license_key": "XXXX-YYYY-ZZZZ",
+  "quantity": "1",
+  "refunded": "false",
+  "resource_name": "sale"
+}

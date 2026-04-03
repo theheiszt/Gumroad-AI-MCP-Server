@@ -8,7 +8,8 @@
     "start": "node dist/index.js",
     "job:sync-products": "tsx src/jobs/run.ts sync-products",
     "job:sync-sales": "tsx src/jobs/run.ts sync-sales",
-    "job:daily-summary": "tsx src/jobs/run.ts daily-summary"
+    "job:daily-summary": "tsx src/jobs/run.ts daily-summary",
+    "job:process-webhooks": "tsx src/jobs/run.ts process-webhooks"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
