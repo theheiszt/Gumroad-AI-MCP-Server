@@ -1,5 +1,12 @@
-import type { LicenseCheck, Product, Sale, SyncSalesArgs } from "../types.js";
-import { normalizeLicenseCheck, normalizeProduct, normalizeSale } from "./normalize.js";
+import type { LicenseCheck, OfferCode, Product, ProductVariant, Sale, SyncSalesArgs, VariantCategory } from "../types.js";
+import {
+  normalizeLicenseCheck,
+  normalizeOfferCode,
+  normalizeProduct,
+  normalizeSale,
+  normalizeVariant,
+  normalizeVariantCategory,
+} from "./normalize.js";
 
 const GUMROAD_API = "https://api.gumroad.com";
 
@@ -30,6 +37,90 @@ export class GumroadClient {
     return normalizeProduct(response.product);
   }
 
+  async createProduct(payload: Record<string, string>) {
+    const body = new URLSearchParams(payload);
+    return this.requestJson("POST", "/v2/products", body);
+  }
+
+  async createVariantCategory(productId: string, payload: Record<string, string>) {
+    return this.requestJson("POST", `/v2/products/${encodeURIComponent(productId)}/variant_categories`, new URLSearchParams(payload));
+  }
+
+  async editVariantCategory(productId: string, variantCategoryId: string, payload: Record<string, string>) {
+    return this.requestJson(
+      "PUT",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(variantCategoryId)}`,
+      new URLSearchParams(payload),
+    );
+  }
+
+  async deleteVariantCategory(productId: string, variantCategoryId: string) {
+    return this.requestJson(
+      "DELETE",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(variantCategoryId)}`,
+    );
+  }
+
+  async listVariantCategories(productId: string): Promise<VariantCategory[]> {
+    const response = await this.requestJson("GET", `/v2/products/${encodeURIComponent(productId)}/variant_categories`);
+    const rows = Array.isArray(response?.variant_categories) ? response.variant_categories : [];
+    return rows.map((row: Record<string, any>) => normalizeVariantCategory(productId, row));
+  }
+
+  async createVariant(productId: string, variantCategoryId: string, payload: Record<string, string>) {
+    return this.requestJson(
+      "POST",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(variantCategoryId)}/variants`,
+      new URLSearchParams(payload),
+    );
+  }
+
+  async editVariant(productId: string, variantCategoryId: string, variantId: string, payload: Record<string, string>) {
+    return this.requestJson(
+      "PUT",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(variantCategoryId)}/variants/${encodeURIComponent(variantId)}`,
+      new URLSearchParams(payload),
+    );
+  }
+
+  async deleteVariant(productId: string, variantCategoryId: string, variantId: string) {
+    return this.requestJson(
+      "DELETE",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(variantCategoryId)}/variants/${encodeURIComponent(variantId)}`,
+    );
+  }
+
+  async listVariants(productId: string, variantCategoryId: string): Promise<ProductVariant[]> {
+    const response = await this.requestJson(
+      "GET",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(variantCategoryId)}/variants`,
+    );
+    const rows = Array.isArray(response?.variants) ? response.variants : [];
+    return rows.map((row: Record<string, any>) => normalizeVariant(productId, variantCategoryId, row));
+  }
+
+  async createOfferCode(productId: string, payload: Record<string, string>) {
+    return this.requestJson("POST", `/v2/products/${encodeURIComponent(productId)}/offer_codes`, new URLSearchParams(payload));
+  }
+
+  async listOfferCodes(productId: string): Promise<OfferCode[]> {
+    const response = await this.requestJson("GET", `/v2/products/${encodeURIComponent(productId)}/offer_codes`);
+    const rows = Array.isArray(response?.offer_codes) ? response.offer_codes : [];
+    return rows.map((row: Record<string, any>) => normalizeOfferCode(productId, row));
+  }
+
+  async disableOfferCode(_productId: string, _offerCodeId: string): Promise<Record<string, any>> {
+    throw new Error(
+      "Unsupported operation: Gumroad API docs/endpoint set in this project do not currently provide a stable disable offer code endpoint.",
+    );
+  }
+
+  async deleteOfferCode(_productId: string, _offerCodeId: string): Promise<Record<string, any>> {
+    throw new Error(
+      "Unsupported operation: Gumroad API docs/endpoint set in this project do not currently provide a stable delete offer code endpoint.",
+    );
+  }
+
   async listSales(args: SyncSalesArgs = {}): Promise<Sale[]> {
     const limit = Math.min(args.limit ?? 100, 500);
     const params = new URLSearchParams();
@@ -43,9 +134,7 @@ export class GumroadClient {
     while (sales.length < limit) {
       if (nextPageKey) params.set("page_key", nextPageKey);
       const response = await this.requestJson("GET", `/v2/sales?${params.toString()}`);
-      const pageRows = Array.isArray(response?.sales)
-        ? response.sales.map((row: Record<string, any>) => normalizeSale(row))
-        : [];
+      const pageRows = Array.isArray(response?.sales) ? response.sales.map((row: Record<string, any>) => normalizeSale(row)) : [];
       sales.push(...pageRows);
       nextPageKey = typeof response?.next_page_key === "string" ? response.next_page_key : undefined;
       if (!nextPageKey || pageRows.length === 0) break;
@@ -65,7 +154,7 @@ export class GumroadClient {
     return normalizeLicenseCheck(productId, licenseKey, response);
   }
 
-  private async requestJson(method: "GET" | "POST", path: string, formBody?: URLSearchParams) {
+  private async requestJson(method: "GET" | "POST" | "PUT" | "DELETE", path: string, formBody?: URLSearchParams) {
     const headers: Record<string, string> = {};
     let url = `${GUMROAD_API}${path}`;
     let body: string | undefined;

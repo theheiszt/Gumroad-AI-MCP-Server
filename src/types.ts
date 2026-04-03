@@ -1,5 +1,36 @@
 export type ProductStatus = "published" | "draft";
 
+export type VariantCategory = {
+  id: string;
+  productId: string;
+  title: string;
+  optionsCount?: number;
+  raw?: Record<string, unknown>;
+};
+
+export type ProductVariant = {
+  id: string;
+  productId: string;
+  variantCategoryId: string;
+  name: string;
+  priceDifferenceCents?: number;
+  maxPurchaseCount?: number;
+  raw?: Record<string, unknown>;
+};
+
+export type OfferCode = {
+  id: string;
+  productId: string;
+  code: string;
+  name?: string;
+  amountCents?: number;
+  percentOff?: number;
+  maxPurchaseCount?: number;
+  universal?: boolean;
+  archived?: boolean;
+  raw?: Record<string, unknown>;
+};
+
 export type Product = {
   id: string;
   name: string;
@@ -11,6 +42,9 @@ export type Product = {
   description?: string;
   salesCount?: number;
   tags?: string[];
+  variantCategories?: VariantCategory[];
+  variants?: ProductVariant[];
+  offerCodes?: OfferCode[];
   raw?: Record<string, unknown>;
 };
 
@@ -63,12 +97,45 @@ export type JobRun = {
   details?: Record<string, unknown>;
 };
 
+export type ConfirmationStatus = "pending" | "executing" | "completed" | "expired" | "failed";
+
+export type WriteActionLog = {
+  id: string;
+  actionType: string;
+  status: "attempted" | "completed" | "failed";
+  at: string;
+  confirmationId?: string;
+  details?: Record<string, unknown>;
+};
+
+export type WriteConfirmation = {
+  confirmationId: string;
+  actionType: string;
+  payloadHash: string;
+  expiresAt: string;
+  status: ConfirmationStatus;
+  createdAt: string;
+  updatedAt: string;
+  requiresPhrase: boolean;
+  input: Record<string, unknown>;
+  apiPayload: Record<string, string>;
+  preview: string;
+  result?: {
+    executedAt: string;
+    response: Record<string, unknown>;
+    resourceId?: string;
+  };
+  error?: string;
+};
+
 export type StoreState = {
   products: Record<string, Product>;
   sales: Record<string, Sale>;
   webhookEvents: Record<string, WebhookEvent>;
   licenseChecks: LicenseCheck[];
   jobRuns: JobRun[];
+  writeConfirmations: Record<string, WriteConfirmation>;
+  writeActions: WriteActionLog[];
   meta: {
     createdAt: string;
     updatedAt: string;

@@ -1,4 +1,4 @@
-import type { LicenseCheck, Product, Sale, WebhookEvent } from "../types.js";
+import type { LicenseCheck, OfferCode, Product, ProductVariant, Sale, VariantCategory, WebhookEvent } from "../types.js";
 import { isoNow, randomId } from "../utils/format.js";
 
 export function normalizeProduct(input: Record<string, any>): Product {
@@ -10,13 +10,61 @@ export function normalizeProduct(input: Record<string, any>): Product {
     currency: String(input.currency ?? "USD").toUpperCase(),
     status: input.published === false ? "draft" : "published",
     createdAt: String(input.created_at ?? isoNow()),
-    description: typeof input.description === "string"
-      ? input.description
-      : typeof input.custom_summary === "string"
-        ? input.custom_summary
-        : undefined,
+    description:
+      typeof input.description === "string" ? input.description : typeof input.custom_summary === "string" ? input.custom_summary : undefined,
     salesCount: input.sales_count != null ? Number(input.sales_count) : undefined,
     tags: Array.isArray(input.tags) ? input.tags.map((value: unknown) => String(value)) : undefined,
+    variantCategories: Array.isArray(input.variant_categories)
+      ? input.variant_categories.map((row: Record<string, any>) => normalizeVariantCategory(String(input.id), row))
+      : undefined,
+    variants: Array.isArray(input.variants)
+      ? input.variants.map((row: Record<string, any>) => normalizeVariant(String(input.id), String(row.variant_category_id ?? ""), row))
+      : undefined,
+    offerCodes: Array.isArray(input.offer_codes)
+      ? input.offer_codes.map((row: Record<string, any>) => normalizeOfferCode(String(input.id), row))
+      : undefined,
+    raw: input,
+  };
+}
+
+export function normalizeVariantCategory(productId: string, input: Record<string, any>): VariantCategory {
+  return {
+    id: String(input.id ?? randomId("variant_category")),
+    productId,
+    title: String(input.title ?? input.name ?? "Untitled category"),
+    optionsCount: input.options_count != null ? Number(input.options_count) : undefined,
+    raw: input,
+  };
+}
+
+export function normalizeVariant(productId: string, variantCategoryId: string, input: Record<string, any>): ProductVariant {
+  return {
+    id: String(input.id ?? randomId("variant")),
+    productId,
+    variantCategoryId: String(input.variant_category_id ?? variantCategoryId),
+    name: String(input.name ?? "Untitled variant"),
+    priceDifferenceCents:
+      input.price_difference_cents != null
+        ? Number(input.price_difference_cents)
+        : input.price_difference != null
+          ? Number(input.price_difference)
+          : undefined,
+    maxPurchaseCount: input.max_purchase_count != null ? Number(input.max_purchase_count) : undefined,
+    raw: input,
+  };
+}
+
+export function normalizeOfferCode(productId: string, input: Record<string, any>): OfferCode {
+  return {
+    id: String(input.id ?? randomId("offer_code")),
+    productId,
+    code: String(input.code ?? input.name ?? ""),
+    name: typeof input.name === "string" ? input.name : undefined,
+    amountCents: input.amount_cents != null ? Number(input.amount_cents) : undefined,
+    percentOff: input.percent_off != null ? Number(input.percent_off) : undefined,
+    maxPurchaseCount: input.max_purchase_count != null ? Number(input.max_purchase_count) : undefined,
+    universal: typeof input.universal === "boolean" ? input.universal : undefined,
+    archived: typeof input.archived === "boolean" ? input.archived : undefined,
     raw: input,
   };
 }
