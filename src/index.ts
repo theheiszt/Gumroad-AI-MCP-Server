@@ -5,6 +5,7 @@ import { normalizeWebhookEvent, deriveSaleFromWebhook } from "./gumroad/normaliz
 import { dailySummaryJob, processWebhookEvent, syncProductsJob, syncSalesJob } from "./jobs/index.js";
 import { handleMcpRequest } from "./mcp.js";
 import { createAppContext } from "./services/app-context.js";
+import { confirmCatalogAction, previewCatalogAction, readProductOfferCodes, readProductVariants } from "./services/catalog-management.js";
 import { confirmProductCreate, previewProductCreate } from "./services/product-create.js";
 import { formatMoney } from "./utils/format.js";
 import {
@@ -221,6 +222,28 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       return sendJson(res, 200, { ok: true, result });
     }
 
+    if (req.method === "GET" && url.pathname === "/admin/products/variants") {
+      assertConfiguredAccessToken();
+      const productId = url.searchParams.get("productId");
+      if (!productId) return sendJson(res, 400, { error: "productId is required." });
+      const result = await readProductVariants(ctx, productId);
+      return sendJson(res, 200, { ok: true, ...result });
+    }
+
+    if (req.method === "GET" && url.pathname === "/admin/products/offer-codes") {
+      assertConfiguredAccessToken();
+      const productId = url.searchParams.get("productId");
+      if (!productId) return sendJson(res, 400, { error: "productId is required." });
+      const result = await readProductOfferCodes(ctx, productId);
+      return sendJson(res, 200, { ok: true, ...result });
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/writes/preview") {
+      const rawBody = await readRawBody(req);
+      const body = parseBody(req.headers["content-type"], rawBody);
+      try {
+        const result = previewCatalogAction(ctx, body);
+        return sendJson(res, 200, result);
     if (req.method === "POST" && url.pathname === "/admin/products/preview_product_create") {
       const rawBody = await readRawBody(req);
       const body = parseBody(req.headers["content-type"], rawBody);
@@ -242,6 +265,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       }
     }
 
+    if (req.method === "POST" && url.pathname === "/admin/writes/confirm") {
+      const rawBody = await readRawBody(req);
+      const body = parseBody(req.headers["content-type"], rawBody);
+      try {
+        const result = await confirmCatalogAction(ctx, body);
     if (req.method === "POST" && url.pathname === "/admin/products/confirm_product_create") {
       assertConfiguredAccessToken();
       const rawBody = await readRawBody(req);
@@ -252,6 +280,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const status = message.includes("already been used") ? 409 : message.includes("not found") ? 404 : 400;
+        return sendJson(res, status, { ok: false, action_type: "confirm_catalog_action", error: message });
         return sendJson(res, status, { ok: false, action_type: "confirm_product_create", error: message });
       }
     }
