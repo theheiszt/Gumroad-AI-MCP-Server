@@ -244,6 +244,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       try {
         const result = previewCatalogAction(ctx, body);
         return sendJson(res, 200, result);
+      } catch (error) {
+        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
     if (req.method === "POST" && url.pathname === "/admin/products/preview_product_create") {
       const rawBody = await readRawBody(req);
       const body = parseBody(req.headers["content-type"], rawBody);
@@ -270,6 +275,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const body = parseBody(req.headers["content-type"], rawBody);
       try {
         const result = await confirmCatalogAction(ctx, body);
+        return sendJson(res, 200, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const status = message.includes("already been used") ? 409 : message.includes("not found") ? 404 : 400;
+        return sendJson(res, status, { ok: false, action_type: "confirm_catalog_action", error: message });
+      }
+    }
+
     if (req.method === "POST" && url.pathname === "/admin/products/confirm_product_create") {
       assertConfiguredAccessToken();
       const rawBody = await readRawBody(req);
@@ -280,7 +293,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const status = message.includes("already been used") ? 409 : message.includes("not found") ? 404 : 400;
-        return sendJson(res, status, { ok: false, action_type: "confirm_catalog_action", error: message });
         return sendJson(res, status, { ok: false, action_type: "confirm_product_create", error: message });
       }
     }
