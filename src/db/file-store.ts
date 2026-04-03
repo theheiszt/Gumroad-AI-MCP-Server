@@ -5,21 +5,14 @@ import type {
   LicenseCheck,
   OfferCode,
   Product,
+  ProductCreateConfirmation,
   Sale,
   SalesSummary,
   StoreState,
   VariantCategory,
   WebhookEvent,
   WriteActionLog,
-  WriteConfirmationRecord,
-  Product,
   WriteConfirmation,
-  ProductCreateConfirmation,
-  Sale,
-  SalesSummary,
-  StoreState,
-  WebhookEvent,
-  WriteActionLog,
 } from "../types.js";
 import { formatMoney, isoNow } from "../utils/format.js";
 
@@ -34,10 +27,7 @@ function createEmptyState(): StoreState {
     writeConfirmations: {},
     productCreateConfirmations: {},
     writeActions: [],
-    meta: {
-      createdAt: now,
-      updatedAt: now,
-    },
+    meta: { createdAt: now, updatedAt: now },
   };
 }
 
@@ -53,12 +43,12 @@ export class FileStore {
     try {
       const raw = readFileSync(this.filePath, "utf8");
       const parsed = JSON.parse(raw) as Partial<StoreState>;
-      const migrated = {
+      return {
         ...createEmptyState(),
         ...parsed,
-        writeConfirmations: (parsed as any).writeConfirmations ?? (parsed as any).productCreateConfirmations ?? {},
+        writeConfirmations: parsed.writeConfirmations ?? {},
+        productCreateConfirmations: parsed.productCreateConfirmations ?? {},
       } as StoreState;
-      return migrated;
     } catch {
       return createEmptyState();
     }
@@ -90,9 +80,7 @@ export class FileStore {
   }
 
   upsertSales(sales: Sale[]) {
-    for (const sale of sales) {
-      this.state.sales[sale.id] = sale;
-    }
+    for (const sale of sales) this.state.sales[sale.id] = sale;
 
     const counts = new Map<string, number>();
     for (const sale of Object.values(this.state.sales)) {
@@ -138,15 +126,11 @@ export class FileStore {
   }
 
   recordWebhookEvent(event: WebhookEvent) {
-    const existing = this.findWebhookByDedupeKey(event.dedupeKey);
+    const existing = Object.values(this.state.webhookEvents).find((item) => item.dedupeKey === event.dedupeKey);
     if (existing) return { inserted: false, existing };
     this.state.webhookEvents[event.id] = event;
     this.persist();
     return { inserted: true, event };
-  }
-
-  private findWebhookByDedupeKey(dedupeKey: string) {
-    return Object.values(this.state.webhookEvents).find((item) => item.dedupeKey === dedupeKey) ?? null;
   }
 
   recordLicenseCheck(result: LicenseCheck) {
@@ -161,24 +145,6 @@ export class FileStore {
     this.persist();
   }
 
-  recordWriteConfirmation(record: WriteConfirmationRecord) {
-    this.state.writeConfirmations[record.confirmationId] = record;
-    this.persist();
-  }
-
-  getWriteConfirmation(confirmationId: string) {
-    return this.state.writeConfirmations[confirmationId];
-  }
-
-  updateWriteConfirmation(
-    confirmationId: string,
-    updater: (current: WriteConfirmationRecord) => WriteConfirmationRecord,
-  ) {
-    const current = this.state.writeConfirmations[confirmationId];
-    if (!current) return undefined;
-    const next = updater(current);
-    this.state.writeConfirmations[confirmationId] = next;
-
   recordWriteConfirmation(record: WriteConfirmation) {
     this.state.writeConfirmations[record.confirmationId] = record;
     this.persist();
@@ -188,10 +154,7 @@ export class FileStore {
     return this.state.writeConfirmations[confirmationId];
   }
 
-  updateWriteConfirmation(
-    confirmationId: string,
-    updater: (current: WriteConfirmation) => WriteConfirmation,
-  ) {
+  updateWriteConfirmation(confirmationId: string, updater: (current: WriteConfirmation) => WriteConfirmation) {
     const current = this.state.writeConfirmations[confirmationId];
     if (!current) return undefined;
     const next = updater(current);
