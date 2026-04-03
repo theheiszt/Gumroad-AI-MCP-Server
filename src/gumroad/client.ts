@@ -61,6 +61,14 @@ export class GumroadClient {
     return this.requestJson("POST", "/v2/products", new URLSearchParams(payload));
   }
 
+  async setProductPublished(productId: string, published: boolean) {
+    return this.requestJson(
+      "PATCH",
+      `/v2/products/${encodeURIComponent(productId)}`,
+      new URLSearchParams({ published: String(published) }),
+    );
+  }
+
   async createVariantCategory(productId: string, payload: Record<string, string>) {
     return this.requestJson("POST", `/v2/products/${encodeURIComponent(productId)}/variant_categories`, new URLSearchParams(payload));
   }
@@ -107,6 +115,22 @@ export class GumroadClient {
 
   async createOfferCode(productId: string, payload: Record<string, string>) {
     return this.requestJson("POST", `/v2/products/${encodeURIComponent(productId)}/offer_codes`, new URLSearchParams(payload));
+  }
+
+  async createCustomField(productId: string, payload: Record<string, string>) {
+    return this.requestJson("POST", `/v2/products/${encodeURIComponent(productId)}/custom_fields`, new URLSearchParams(payload));
+  }
+
+  async editCustomField(productId: string, customFieldId: string, payload: Record<string, string>) {
+    return this.requestJson(
+      "PATCH",
+      `/v2/products/${encodeURIComponent(productId)}/custom_fields/${encodeURIComponent(customFieldId)}`,
+      new URLSearchParams(payload),
+    );
+  }
+
+  async deleteCustomField(productId: string, customFieldId: string) {
+    return this.requestJson("DELETE", `/v2/products/${encodeURIComponent(productId)}/custom_fields/${encodeURIComponent(customFieldId)}`);
   }
 
   async listOfferCodes(productId: string): Promise<OfferCode[]> {

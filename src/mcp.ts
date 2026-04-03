@@ -4,7 +4,6 @@ import { z } from "zod";
 import { assertConfiguredAccessToken } from "./config.js";
 import { syncProductsJob, syncSalesJob, dailySummaryJob } from "./jobs/index.js";
 import type { AppContext } from "./services/app-context.js";
-import { confirmCatalogAction, previewCatalogAction } from "./services/catalog-management.js";
 import { formatMoney } from "./utils/format.js";
 
 function textContent(text: string) {
@@ -292,62 +291,6 @@ export function createMcpServer(ctx: AppContext) {
         };
       } catch (error) {
         return toolError("Unable to run the summary job.", error);
-      }
-    },
-  );
-
-  server.registerTool(
-    "preview_product_create",
-    {
-      title: "Preview product creation",
-      description:
-        "Create a confirmation-gated preview for product creation. Supports digital_product, ebook, bundle, membership, and course.",
-      inputSchema: {
-        product_type: z.enum(["digital_product", "ebook", "bundle", "membership", "course"]).default("digital_product"),
-        name: z.string().min(1),
-        price_cents: z.number().int().min(1),
-        currency: z.string().optional(),
-        description: z.string().optional(),
-        published: z.union([z.boolean(), z.string()]).optional(),
-        custom_summary: z.string().optional(),
-        custom_receipt: z.string().optional(),
-        tags: z.union([z.string(), z.array(z.string())]).optional(),
-      },
-    },
-    async (args) => {
-      try {
-        assertConfiguredAccessToken();
-        const result = previewCatalogAction(ctx, { ...args, action_type: "product_create" });
-        return {
-          content: textContent(`Prepared product creation preview for ${args.name}. Confirm with confirmation_id to execute.`),
-          structuredContent: result,
-        };
-      } catch (error) {
-        return toolError("Unable to preview product creation.", error);
-      }
-    },
-  );
-
-  server.registerTool(
-    "confirm_product_create",
-    {
-      title: "Confirm product creation",
-      description: "Execute a previously previewed product creation request using confirmation_id.",
-      inputSchema: {
-        confirmation_id: z.string().min(1),
-        confirmation_phrase: z.string().optional(),
-      },
-    },
-    async (args) => {
-      try {
-        assertConfiguredAccessToken();
-        const result = await confirmCatalogAction(ctx, args);
-        return {
-          content: textContent(`Product creation confirmed for ${args.confirmation_id}.`),
-          structuredContent: result,
-        };
-      } catch (error) {
-        return toolError("Unable to confirm product creation.", error);
       }
     },
   );

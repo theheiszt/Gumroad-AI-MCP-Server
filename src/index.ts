@@ -7,7 +7,7 @@ import { handleMcpRequest } from "./mcp.js";
 import { createAppContext } from "./services/app-context.js";
 import { buildCheckoutUrl, parseCheckoutLinkRequest } from "./services/checkout-links.js";
 import { confirmCatalogAction, previewCatalogAction } from "./services/catalog-management.js";
-import { confirmProductCreate, previewProductCreate, refreshOfferCodes, refreshVariants } from "./services/product-create.js";
+import { refreshOfferCodes, refreshVariants } from "./services/product-create.js";
 import { formatMoney } from "./utils/format.js";
 import {
   parseBody,
@@ -275,9 +275,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const body = parseBody(req.headers["content-type"], await readRawBody(req));
       try {
         const input = parseCheckoutLinkRequest(body);
-        const product = input.product ?? ctx.store.getProduct(input.productId ?? "");
+        const product = input.product ?? (input.productUrl ? { permalink: input.productUrl } : undefined) ?? ctx.store.getProduct(input.productId ?? "");
         if (!product) {
-          return sendJson(res, 404, { ok: false, error: "Product not found. Provide product or valid productId." });
+          return sendJson(res, 404, { ok: false, error: "Product not found. Provide product, productUrl, or valid productId." });
         }
 
         const checkout = buildCheckoutUrl(product, input.options ?? {});
@@ -412,24 +412,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     }
 
     if (req.method === "POST" && url.pathname === "/admin/products/preview_product_create") {
-      const rawBody = await readRawBody(req);
-      const body = parseBody(req.headers["content-type"], rawBody);
-      try {
-        const result = previewProductCreate(ctx, body);
-        return sendJson(res, 200, {
-          ok: true,
-          action_type: "preview_product_create",
-          confirmation_id: result.confirmation.confirmationId,
-          expires_at: result.confirmation.expiresAt,
-          payload_hash: result.confirmation.payloadHash,
-          status: result.confirmation.status,
-          requires_confirmation_phrase: result.confirmation.requiresPhrase,
-          preview: result.preview,
-          request_payload: result.confirmation.apiPayload,
-        });
-      } catch (error) {
-        return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
-      }
+      return sendJson(res, 410, {
+        ok: false,
+        action_type: "preview_product_create",
+        error: "Base product creation is UI-first. Create the product in Gumroad UI, then manage it via API actions.",
+      });
     }
 
     if (req.method === "POST" && url.pathname === "/admin/writes/confirm") {
@@ -446,17 +433,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     }
 
     if (req.method === "POST" && url.pathname === "/admin/products/confirm_product_create") {
-      assertConfiguredAccessToken();
-      const rawBody = await readRawBody(req);
-      const body = parseBody(req.headers["content-type"], rawBody);
-      try {
-        const result = await confirmProductCreate(ctx, body);
-        return sendJson(res, 200, result);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const status = confirmationErrorStatus(message);
-        return sendJson(res, status, { ok: false, action_type: "confirm_product_create", error: message });
-      }
+      return sendJson(res, 410, {
+        ok: false,
+        action_type: "confirm_product_create",
+        error: "Base product creation is UI-first. Create the product in Gumroad UI, then manage it via API actions.",
+      });
     }
 
     const previewRouteActions: Record<string, string> = {
@@ -466,6 +447,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       "/admin/variants/preview_create": "variant_create",
       "/admin/variants/preview_edit": "variant_edit",
       "/admin/variants/preview_delete": "variant_delete",
+      "/admin/products/preview_enable": "product_enable",
+      "/admin/products/preview_disable": "product_disable",
+      "/admin/custom-fields/preview_create": "custom_field_create",
+      "/admin/custom-fields/preview_edit": "custom_field_edit",
+      "/admin/custom-fields/preview_delete": "custom_field_delete",
       "/admin/offer-codes/preview_create": "offer_code_create",
       "/admin/offer-codes/preview_delete": "offer_code_delete",
       "/admin/offer-codes/preview_disable": "offer_code_disable",
