@@ -1,6 +1,16 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { JobRun, LicenseCheck, Product, Sale, SalesSummary, StoreState, WebhookEvent } from "../types.js";
+import type {
+  JobRun,
+  LicenseCheck,
+  Product,
+  ProductCreateConfirmation,
+  Sale,
+  SalesSummary,
+  StoreState,
+  WebhookEvent,
+  WriteActionLog,
+} from "../types.js";
 import { formatMoney, isoNow } from "../utils/format.js";
 
 function createEmptyState(): StoreState {
@@ -11,6 +21,8 @@ function createEmptyState(): StoreState {
     webhookEvents: {},
     licenseChecks: [],
     jobRuns: [],
+    productCreateConfirmations: {},
+    writeActions: [],
     meta: {
       createdAt: now,
       updatedAt: now,
@@ -94,6 +106,38 @@ export class FileStore {
     this.state.jobRuns.unshift(run);
     this.state.jobRuns = this.state.jobRuns.slice(0, 200);
     this.persist();
+  }
+
+
+  recordProductCreateConfirmation(record: ProductCreateConfirmation) {
+    this.state.productCreateConfirmations[record.confirmationId] = record;
+    this.persist();
+  }
+
+  getProductCreateConfirmation(confirmationId: string) {
+    return this.state.productCreateConfirmations[confirmationId];
+  }
+
+  updateProductCreateConfirmation(
+    confirmationId: string,
+    updater: (current: ProductCreateConfirmation) => ProductCreateConfirmation,
+  ) {
+    const current = this.state.productCreateConfirmations[confirmationId];
+    if (!current) return undefined;
+    const next = updater(current);
+    this.state.productCreateConfirmations[confirmationId] = next;
+    this.persist();
+    return next;
+  }
+
+  recordWriteAction(action: WriteActionLog) {
+    this.state.writeActions.unshift(action);
+    this.state.writeActions = this.state.writeActions.slice(0, 1000);
+    this.persist();
+  }
+
+  listWriteActions(limit = 50) {
+    return this.state.writeActions.slice(0, limit);
   }
 
   listProducts() {

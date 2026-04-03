@@ -21,6 +21,8 @@ export const config = {
   outboundMembershipWebhookUrl: process.env.OUTBOUND_MEMBERSHIP_WEBHOOK_URL ?? "",
   outboundSummaryWebhookUrl: process.env.OUTBOUND_SUMMARY_WEBHOOK_URL ?? "",
   logLevel: process.env.LOG_LEVEL ?? "info",
+  productCreateConfirmationTtlMs: numberFromEnv(process.env.PRODUCT_CREATE_CONFIRMATION_TTL_MS, 10 * 60 * 1000),
+  productCreateConfirmationPhrase: process.env.PRODUCT_CREATE_CONFIRMATION_PHRASE ?? "",
 };
 
 export function assertConfiguredAccessToken() {
