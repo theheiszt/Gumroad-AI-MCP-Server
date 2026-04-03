@@ -65,10 +65,13 @@ Routes:
 - `GET /admin/products/:productId/offer-codes` *(canonical read endpoint)*
 - `GET /admin/products/variants?productId=<id>` *(deprecated alias; responds with `Deprecation: true` and `Sunset: Wed, 31 Dec 2026 23:59:59 GMT`)*
 - `GET /admin/products/offer-codes?productId=<id>` *(deprecated alias; responds with `Deprecation: true` and `Sunset: Wed, 31 Dec 2026 23:59:59 GMT`)*
-- `POST /admin/products/preview_product_create`
-- `POST /admin/products/confirm_product_create`
+- `POST /admin/products/preview_enable`
+- `POST /admin/products/preview_disable`
 - `POST /admin/products/:productId/variants/refresh`
 - `POST /admin/products/:productId/offer-codes/refresh`
+- `POST /admin/custom-fields/preview_create`
+- `POST /admin/custom-fields/preview_edit`
+- `POST /admin/custom-fields/preview_delete`
 - `POST /admin/variants/categories/preview_create`
 - `POST /admin/variants/categories/preview_edit`
 - `POST /admin/variants/categories/preview_delete`
@@ -95,18 +98,7 @@ The shim exposes these tools:
 - `run_sync_sales`
 - `run_daily_summary`
 - `verify_license`
-- `preview_product_create`
-- `confirm_product_create`
-
-`preview_product_create` supports typed product workflows for:
-
-- `digital_product`
-- `ebook`
-- `bundle`
-- `membership`
-- `course`
-
-It returns a confirmation record (`confirmation_id`) so ChatGPT can safely review the payload before running `confirm_product_create`.
+- Product creation is UI-first: create base products in Gumroad UI, then use admin write previews + confirm for API-manageable features (status, variants, offer codes, custom fields).
 
 ## Install
 
@@ -280,7 +272,7 @@ curl -X POST http://localhost:80/admin/checkout-links/generate \
   }'
 ```
 
-You can also pass `product` directly when the product is not in cache:
+You can also pass `product` directly when the product is not in cache, or pass only `productUrl`:
 
 ```json
 {
@@ -292,6 +284,15 @@ You can also pass `product` directly when the product is not in cache:
   "options": {
     "frequency": "monthly",
     "variant": "starter"
+  }
+}
+```
+
+```json
+{
+  "productUrl": "https://gumroad.com/l/my-membership",
+  "options": {
+    "discountCode": "SPRING20"
   }
 }
 ```
@@ -364,21 +365,18 @@ Example response:
 }
 ```
 
-### Preview product creation (required phase 1)
+### UI-first product creation
+
+Create the base product in Gumroad UI first. API writes are focused on related catalog operations after the product exists.
+
+### Preview product enable/disable (required phase 1)
 
 ```bash
-curl -X POST http://localhost:80/admin/products/preview_product_create \
+curl -X POST http://localhost:80/admin/products/preview_disable \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{
-    "name":"Creator Toolkit",
-    "description":"Templates + prompts",
-    "price_cents":2900,
-    "currency":"USD",
-    "published":false,
-    "custom_summary":"Thanks for buying Creator Toolkit.",
-    "custom_receipt":"Need help? Reply to this receipt.",
-    "tags":["creator","templates"]
+    "product_id":"abc123"
   }'
 ```
 
@@ -387,22 +385,19 @@ Example response:
 ```json
 {
   "ok": true,
-  "action_type": "preview_product_create",
-  "confirmation_id": "confirm_prod_create_xxx",
+  "action_type": "product_disable",
+  "confirmation_id": "confirm_write_xxx",
   "expires_at": "2026-04-03T12:00:00.000Z",
   "payload_hash": "1f...",
   "status": "pending",
   "requires_confirmation_phrase": false,
-  "preview": "Product: Creator Toolkit\nPrice: 2900 USD\n...",
-  "request_payload": {
-    "name": "Creator Toolkit",
-    "price": "2900",
-    "currency": "usd",
-    "description": "Templates + prompts",
-    "published": "false",
-    "custom_summary": "Thanks for buying Creator Toolkit.",
-    "custom_receipt": "Need help? Reply to this receipt.",
-    "tags": "creator,templates"
+  "preview": "Disable product abc123.",
+  "api_request": {
+    "method": "PATCH",
+    "path": "/v2/products/abc123",
+    "payload": {
+      "published": "false"
+    }
   }
 }
 ```
@@ -428,37 +423,6 @@ Example response:
   "status": "completed",
   "full_response": {
     "success": true
-  }
-}
-```
-
-### Confirm product creation (required phase 2)
-
-```bash
-curl -X POST http://localhost:80/admin/products/confirm_product_create \
-  -H "Authorization: Bearer change-me" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "confirmation_id":"confirm_prod_create_xxx",
-    "confirmation_phrase":"CONFIRM CREATE"
-  }'
-```
-
-Example response:
-
-```json
-{
-  "ok": true,
-  "confirmation_id": "confirm_prod_create_xxx",
-  "action_type": "product_create",
-  "status": "completed",
-  "product_id": "abc123",
-  "summary": "Product creation completed for \"Creator Toolkit\".",
-  "full_response": {
-    "success": true,
-    "product": {
-      "id": "abc123"
-    }
   }
 }
 ```

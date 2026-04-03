@@ -129,12 +129,17 @@ export type ConfirmationStatus = "pending" | "executing" | "completed" | "expire
 
 export type WriteActionType =
   | "product_create"
+  | "product_enable"
+  | "product_disable"
   | "variant_category_create"
   | "variant_category_edit"
   | "variant_category_delete"
   | "variant_create"
   | "variant_edit"
   | "variant_delete"
+  | "custom_field_create"
+  | "custom_field_edit"
+  | "custom_field_delete"
   | "offer_code_create"
   | "offer_code_list"
   | "offer_code_disable"

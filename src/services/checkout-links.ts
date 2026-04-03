@@ -85,11 +85,12 @@ export function parseCheckoutLinkRequest(input: unknown) {
     .object({
       product: checkoutProductSchema.optional(),
       productId: z.string().trim().min(1).optional(),
+      productUrl: z.string().trim().min(1).optional(),
       options: checkoutOptionsSchema.optional(),
     })
     .strict()
     .superRefine((value, ctx) => {
-      if (!value.product && !value.productId) {
+      if (!value.product && !value.productId && !value.productUrl) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["product"], message: "Either product or productId is required." });
       }
     });

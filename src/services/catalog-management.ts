@@ -6,14 +6,6 @@ import { confirmWriteOperation, previewWriteOperation } from "./write-confirmati
 
 type CatalogActionInput = Record<string, unknown> & { action_type?: unknown };
 
-const PRODUCT_TYPE_TAGS: Record<string, string[]> = {
-  digital_product: ["digital-product"],
-  ebook: ["ebook", "digital-reading"],
-  bundle: ["bundle", "multi-product"],
-  membership: ["membership", "subscription"],
-  course: ["course", "learning"],
-};
-
 export function previewCatalogAction(ctx: AppContext, input: CatalogActionInput) {
   const actionType = requireActionType(input.action_type);
   const plan = buildActionPlan(actionType, input);
@@ -81,13 +73,17 @@ function requireActionType(value: unknown): WriteActionType {
     throw new Error("action_type is required.");
   }
   const valid: WriteActionType[] = [
-    "product_create",
+    "product_enable",
+    "product_disable",
     "variant_category_create",
     "variant_category_edit",
     "variant_category_delete",
     "variant_create",
     "variant_edit",
     "variant_delete",
+    "custom_field_create",
+    "custom_field_edit",
+    "custom_field_delete",
     "offer_code_create",
     "offer_code_list",
     "offer_code_disable",
@@ -101,24 +97,15 @@ function requireActionType(value: unknown): WriteActionType {
 
 function buildActionPlan(actionType: WriteActionType, input: CatalogActionInput) {
   switch (actionType) {
-    case "product_create": {
-      const productType = optionalString(input.product_type)?.toLowerCase() ?? "digital_product";
-      if (!(productType in PRODUCT_TYPE_TAGS)) {
-        throw new Error("product_type must be one of: digital_product, ebook, bundle, membership, course.");
-      }
-      const name = requiredString(input.name, "name");
-      const priceCents = requiredInteger(input.price_cents, "price_cents");
-      const currency = optionalString(input.currency)?.toLowerCase() ?? "usd";
-      const payload: Record<string, string> = { name, price: String(priceCents), currency };
-      maybeSet(payload, "description", optionalString(input.description));
-      maybeSet(payload, "published", booleanString(input.published));
-      maybeSet(payload, "custom_summary", optionalString(input.custom_summary));
-      maybeSet(payload, "custom_receipt", optionalString(input.custom_receipt));
-      maybeSet(payload, "tags", mergeTags(csv(input.tags), PRODUCT_TYPE_TAGS[productType]));
+    case "product_enable":
+    case "product_disable": {
+      const productId = requiredString(input.product_id, "product_id");
+      const published = actionType === "product_enable";
+      const payload = { published: String(published) };
       return {
-        input: { ...input, product_type: productType },
-        apiRequest: { method: "POST" as const, path: "/v2/products", payload },
-        preview: `Create ${productType} product \"${name}\" with payload ${JSON.stringify(payload)}`,
+        input: { product_id: productId },
+        apiRequest: { method: "PATCH" as const, path: `/v2/products/${productId}`, payload },
+        preview: `${published ? "Enable" : "Disable"} product ${productId}.`,
       };
     }
     case "variant_category_create": {
@@ -187,6 +174,42 @@ function buildActionPlan(actionType: WriteActionType, input: CatalogActionInput)
         preview: `Delete variant ${variantId} for product ${productId}.`,
       };
     }
+    case "custom_field_create": {
+      const productId = requiredString(input.product_id, "product_id");
+      const name = requiredString(input.name, "name");
+      const payload: Record<string, string> = { name };
+      maybeSet(payload, "type", optionalString(input.type));
+      maybeSet(payload, "required", booleanString(input.required));
+      maybeSet(payload, "collect_per_quantity", booleanString(input.collect_per_quantity));
+      return {
+        input: { product_id: productId, ...payload },
+        apiRequest: { method: "POST" as const, path: `/v2/products/${productId}/custom_fields`, payload },
+        preview: `Create custom field "${name}" for product ${productId}.`,
+      };
+    }
+    case "custom_field_edit": {
+      const productId = requiredString(input.product_id, "product_id");
+      const customFieldId = requiredString(input.custom_field_id, "custom_field_id");
+      const payload: Record<string, string> = {};
+      maybeSet(payload, "name", optionalString(input.name));
+      maybeSet(payload, "required", booleanString(input.required));
+      maybeSet(payload, "collect_per_quantity", booleanString(input.collect_per_quantity));
+      if (Object.keys(payload).length === 0) throw new Error("custom_field_edit requires at least one editable field.");
+      return {
+        input: { product_id: productId, custom_field_id: customFieldId, ...payload },
+        apiRequest: { method: "PATCH" as const, path: `/v2/products/${productId}/custom_fields/${customFieldId}`, payload },
+        preview: `Edit custom field ${customFieldId} for product ${productId}.`,
+      };
+    }
+    case "custom_field_delete": {
+      const productId = requiredString(input.product_id, "product_id");
+      const customFieldId = requiredString(input.custom_field_id, "custom_field_id");
+      return {
+        input: { product_id: productId, custom_field_id: customFieldId },
+        apiRequest: { method: "DELETE" as const, path: `/v2/products/${productId}/custom_fields/${customFieldId}` },
+        preview: `Delete custom field ${customFieldId} for product ${productId}.`,
+      };
+    }
     case "offer_code_create": {
       const productId = requiredString(input.product_id, "product_id");
       const code = requiredString(input.code, "code");
@@ -227,14 +250,21 @@ function buildActionPlan(actionType: WriteActionType, input: CatalogActionInput)
         preview: `Delete offer code ${offerCodeId} for product ${productId}.`,
       };
     }
+    default:
+      throw new Error(`Unsupported action_type: ${actionType}`);
   }
 }
 
 async function executeAction(ctx: AppContext, actionType: WriteActionType, input: Record<string, unknown>) {
   switch (actionType) {
-    case "product_create": {
-      const payload = buildActionPlan(actionType, input as CatalogActionInput).apiRequest.payload ?? {};
-      return ctx.client.createProduct(payload);
+    case "product_create":
+      throw new Error("Base product creation is UI-first. Create the product in Gumroad UI, then manage it via API actions.");
+    case "product_enable":
+    case "product_disable": {
+      const productId = requiredString(input.product_id, "product_id");
+      const published = actionType === "product_enable";
+      const response = await ctx.client.setProductPublished(productId, published);
+      return { ...response, product_id: productId, published };
     }
     case "variant_category_create": {
       const productId = requiredString(input.product_id, "product_id");
@@ -278,9 +308,25 @@ async function executeAction(ctx: AppContext, actionType: WriteActionType, input
       await refreshVariants(ctx, productId);
       return response;
     }
+    case "custom_field_create": {
+      const productId = requiredString(input.product_id, "product_id");
+      const payload = requirePayload(buildActionPlan(actionType, input as CatalogActionInput).apiRequest.payload, actionType);
+      return ctx.client.createCustomField(productId, payload);
+    }
+    case "custom_field_edit": {
+      const productId = requiredString(input.product_id, "product_id");
+      const customFieldId = requiredString(input.custom_field_id, "custom_field_id");
+      const payload = requirePayload(buildActionPlan(actionType, input as CatalogActionInput).apiRequest.payload, actionType);
+      return ctx.client.editCustomField(productId, customFieldId, payload);
+    }
+    case "custom_field_delete": {
+      const productId = requiredString(input.product_id, "product_id");
+      const customFieldId = requiredString(input.custom_field_id, "custom_field_id");
+      return ctx.client.deleteCustomField(productId, customFieldId);
+    }
     case "offer_code_create": {
       const productId = requiredString(input.product_id, "product_id");
-      const payload = buildActionPlan(actionType, input as CatalogActionInput).apiRequest.payload ?? {};
+      const payload = requirePayload(buildActionPlan(actionType, input as CatalogActionInput).apiRequest.payload, actionType);
       const response = await ctx.client.createOfferCode(productId, payload);
       const offerCodes = await ctx.client.listOfferCodes(productId);
       ctx.store.upsertProductOfferCodes(productId, offerCodes);
@@ -308,6 +354,8 @@ async function executeAction(ctx: AppContext, actionType: WriteActionType, input
       ctx.store.upsertProductOfferCodes(productId, offerCodes);
       return { ...response, product_id: productId, offer_code_id: offerCodeId };
     }
+    default:
+      throw new Error(`Unsupported action_type: ${actionType}`);
   }
 }
 
@@ -328,12 +376,6 @@ function optionalString(value: unknown) {
   return out || undefined;
 }
 
-function requiredInteger(value: unknown, field: string) {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${field} must be a positive integer.`);
-  return parsed;
-}
-
 function optionalIntegerString(value: unknown) {
   if (value == null || value === "") return undefined;
   const parsed = typeof value === "number" ? value : Number(value);
@@ -347,20 +389,11 @@ function booleanString(value: unknown) {
   return undefined;
 }
 
-function csv(value: unknown) {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map((v) => String(v)).join(",");
-  return undefined;
-}
-
 function maybeSet(target: Record<string, string>, key: string, value?: string) {
   if (value !== undefined) target[key] = value;
 }
 
-function mergeTags(rawCsv: string | undefined, defaultTags: string[]) {
-  const out = new Set<string>(defaultTags);
-  for (const tag of (rawCsv ?? "").split(",").map((part) => part.trim()).filter(Boolean)) {
-    out.add(tag);
-  }
-  return out.size > 0 ? Array.from(out).join(",") : undefined;
+function requirePayload(payload: Record<string, string> | undefined, actionType: WriteActionType) {
+  if (!payload) throw new Error(`Action ${actionType} requires a request payload.`);
+  return payload;
 }
