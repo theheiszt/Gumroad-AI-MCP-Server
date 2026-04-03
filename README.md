@@ -202,6 +202,31 @@ curl -X POST http://localhost:8788/admin/writes/preview \
     "action_type":"variant_category_create",
     "product_id":"abc123",
     "name":"Size"
+  }'
+```
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "action_type": "variant_category_create",
+  "confirmation_id": "confirm_write_xxx",
+  "payload_hash": "1f...",
+  "expires_at": "2026-04-03T12:00:00.000Z",
+  "status": "pending",
+  "requires_confirmation_phrase": false,
+  "preview": "Create variant category \"Size\" for product abc123.",
+  "api_request": {
+    "method": "POST",
+    "path": "/v2/products/abc123/variant_categories",
+    "payload": {
+      "name": "Size"
+    }
+  }
+}
+```
+
 ### Preview product creation (required phase 1)
 
 ```bash
@@ -225,21 +250,22 @@ Example response:
 ```json
 {
   "ok": true,
-  "action_type": "variant_category_create",
-  "confirmation_id": "confirm_write_xxx",
   "action_type": "preview_product_create",
   "confirmation_id": "confirm_prod_create_xxx",
   "expires_at": "2026-04-03T12:00:00.000Z",
   "payload_hash": "1f...",
   "status": "pending",
   "requires_confirmation_phrase": false,
-  "preview": "Create variant category \"Size\" for product abc123.",
-  "api_request": {
-    "method": "POST",
-    "path": "/v2/products/abc123/variant_categories",
-    "payload": {
-      "name": "Size"
-    }
+  "preview": "Product: Creator Toolkit\nPrice: 2900 USD\n...",
+  "request_payload": {
+    "name": "Creator Toolkit",
+    "price": "2900",
+    "currency": "usd",
+    "description": "Templates + prompts",
+    "published": "false",
+    "custom_summary": "Thanks for buying Creator Toolkit.",
+    "custom_receipt": "Need help? Reply to this receipt.",
+    "tags": "creator,templates"
   }
 }
 ```
@@ -252,16 +278,19 @@ curl -X POST http://localhost:8788/admin/writes/confirm \
   -H "Content-Type: application/json" \
   -d '{
     "confirmation_id":"confirm_write_xxx",
-  "preview": "Product: Creator Toolkit\nPrice: 2900 USD\n...",
-  "request_payload": {
-    "name": "Creator Toolkit",
-    "price": "2900",
-    "currency": "usd",
-    "description": "Templates + prompts",
-    "published": "false",
-    "custom_summary": "Thanks for buying Creator Toolkit.",
-    "custom_receipt": "Need help? Reply to this receipt.",
-    "tags": "creator,templates"
+    "confirmation_phrase":"CONFIRM CREATE"
+  }'
+```
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "confirmation_id": "confirm_write_xxx",
+  "status": "completed",
+  "full_response": {
+    "success": true
   }
 }
 ```
@@ -283,10 +312,6 @@ Example response:
 ```json
 {
   "ok": true,
-  "confirmation_id": "confirm_write_xxx",
-  "status": "completed",
-  "full_response": {
-    "success": true
   "confirmation_id": "confirm_prod_create_xxx",
   "action_type": "product_create",
   "status": "completed",
