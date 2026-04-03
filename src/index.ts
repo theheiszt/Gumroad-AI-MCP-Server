@@ -456,18 +456,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       }
     }
 
-    if (req.method === "POST" && url.pathname === "/admin/writes/confirm") {
-      assertConfiguredAccessToken();
-      const body = parseBody(req.headers["content-type"], await readRawBody(req));
-      try {
-        const result = await confirmWrite(ctx, body);
-        return sendJson(res, 200, result);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return sendJson(res, confirmationErrorStatus(message), { ok: false, action_type: "confirm_write", error: message });
-      }
-    }
-
     return sendJson(res, 404, { error: "Admin route not found." });
   }
 
