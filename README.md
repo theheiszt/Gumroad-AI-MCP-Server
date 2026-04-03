@@ -15,12 +15,6 @@ And adds a thin MCP layer so ChatGPT or any MCP client can talk to the service d
 
 ## Current capabilities
 
-The earlier personal fork was **not** an MCP server, which is why an MCP client got:
-
-```json
-{"error":"Not found"}
-```
-
 This version provides:
 
 - `GET/POST/DELETE /mcp`
@@ -148,13 +142,13 @@ npm run job:process-webhooks
 Your MCP endpoint is:
 
 ```text
-http://localhost:8788/mcp
+http://localhost:80/mcp
 ```
 
 If you use ngrok:
 
 ```bash
-ngrok http 8788
+ngrok http 80
 ```
 
 Then the public MCP endpoint becomes:
@@ -194,7 +188,7 @@ If your Gumroad Ping setup uses a different verification convention, adjust `ver
 Valid payload:
 
 ```bash
-curl -X POST http://localhost:8788/webhooks/gumroad/ping \
+curl -X POST http://localhost:80/webhooks/gumroad/ping \
   -H "Content-Type: application/json" \
   -d @docs/fixtures/gumroad-webhook-sale.json
 ```
@@ -202,7 +196,7 @@ curl -X POST http://localhost:8788/webhooks/gumroad/ping \
 Malformed payload (should return `400` and record a failed event):
 
 ```bash
-curl -X POST http://localhost:8788/webhooks/gumroad/ping \
+curl -X POST http://localhost:80/webhooks/gumroad/ping \
   -H "Content-Type: application/json" \
   --data-binary @docs/fixtures/gumroad-webhook-malformed.txt
 ```
@@ -210,7 +204,7 @@ curl -X POST http://localhost:8788/webhooks/gumroad/ping \
 Process queued events:
 
 ```bash
-curl -X POST http://localhost:8788/admin/jobs/process-webhooks \
+curl -X POST http://localhost:80/admin/jobs/process-webhooks \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"batchSize":25}'
@@ -219,7 +213,7 @@ curl -X POST http://localhost:8788/admin/jobs/process-webhooks \
 Inspect normalized Gumroad Ping sales:
 
 ```bash
-curl http://localhost:8788/admin/events/gumroad-sales?limit=50 \
+curl http://localhost:80/admin/events/gumroad-sales?limit=50 \
   -H "Authorization: Bearer change-me"
 ```
 
@@ -228,14 +222,14 @@ curl http://localhost:8788/admin/events/gumroad-sales?limit=50 \
 ### Sync products
 
 ```bash
-curl -X POST http://localhost:8788/admin/jobs/sync-products \
+curl -X POST http://localhost:80/admin/jobs/sync-products \
   -H "Authorization: Bearer change-me"
 ```
 
 ### Sync recent sales
 
 ```bash
-curl -X POST http://localhost:8788/admin/jobs/sync-sales \
+curl -X POST http://localhost:80/admin/jobs/sync-sales \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"after":"2026-04-01T00:00:00Z","limit":100}'
@@ -244,7 +238,7 @@ curl -X POST http://localhost:8788/admin/jobs/sync-sales \
 ### Verify a license
 
 ```bash
-curl -X POST http://localhost:8788/admin/licenses/verify \
+curl -X POST http://localhost:80/admin/licenses/verify \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"productId":"abc123","licenseKey":"XXXX-XXXX-XXXX"}'
@@ -253,7 +247,7 @@ curl -X POST http://localhost:8788/admin/licenses/verify \
 ### Preview catalog action (required phase 1)
 
 ```bash
-curl -X POST http://localhost:8788/admin/writes/preview \
+curl -X POST http://localhost:80/admin/writes/preview \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{
@@ -288,7 +282,7 @@ Example response:
 ### Preview product creation (required phase 1)
 
 ```bash
-curl -X POST http://localhost:8788/admin/products/preview_product_create \
+curl -X POST http://localhost:80/admin/products/preview_product_create \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{
@@ -331,7 +325,7 @@ Example response:
 ### Confirm catalog action (required phase 2)
 
 ```bash
-curl -X POST http://localhost:8788/admin/writes/confirm \
+curl -X POST http://localhost:80/admin/writes/confirm \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{
@@ -356,7 +350,7 @@ Example response:
 ### Confirm product creation (required phase 2)
 
 ```bash
-curl -X POST http://localhost:8788/admin/products/confirm_product_create \
+curl -X POST http://localhost:80/admin/products/confirm_product_create \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{
@@ -430,7 +424,7 @@ If you want a stronger production backend later, the clean next step is swapping
 ### Generic confirm for all write previews
 
 ```bash
-curl -X POST http://localhost:8788/admin/writes/confirm \
+curl -X POST http://localhost:80/admin/writes/confirm \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"confirmation_id":"confirm_write_xxx"}'
@@ -439,7 +433,7 @@ curl -X POST http://localhost:8788/admin/writes/confirm \
 ### Variant category preview (create)
 
 ```bash
-curl -X POST http://localhost:8788/admin/variants/categories/preview_create \
+curl -X POST http://localhost:80/admin/variants/categories/preview_create \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"product_id":"prod_123","title":"Size"}'
@@ -448,7 +442,7 @@ curl -X POST http://localhost:8788/admin/variants/categories/preview_create \
 ### Variant preview (create)
 
 ```bash
-curl -X POST http://localhost:8788/admin/variants/preview_create \
+curl -X POST http://localhost:80/admin/variants/preview_create \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"product_id":"prod_123","variant_category_id":"vc_123","name":"Large"}'
@@ -457,7 +451,7 @@ curl -X POST http://localhost:8788/admin/variants/preview_create \
 ### Offer code preview (create)
 
 ```bash
-curl -X POST http://localhost:8788/admin/offer-codes/preview_create \
+curl -X POST http://localhost:80/admin/offer-codes/preview_create \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"product_id":"prod_123","name":"Summer","code":"SUMMER25","percent_off":25}'
