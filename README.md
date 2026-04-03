@@ -94,6 +94,18 @@ The shim exposes these tools:
 - `run_sync_sales`
 - `run_daily_summary`
 - `verify_license`
+- `preview_product_create`
+- `confirm_product_create`
+
+`preview_product_create` supports typed product workflows for:
+
+- `digital_product`
+- `ebook`
+- `bundle`
+- `membership`
+- `course`
+
+It returns a confirmation record (`confirmation_id`) so ChatGPT can safely review the payload before running `confirm_product_create`.
 
 ## Install
 

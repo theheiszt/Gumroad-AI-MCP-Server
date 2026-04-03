@@ -175,6 +175,7 @@ export type WriteConfirmation = {
 export type WriteConfirmationRecord = WriteConfirmation;
 
 export type ProductCreateDraft = {
+  productType: "digital_product" | "ebook" | "bundle" | "membership" | "course";
   name: string;
   description?: string;
   priceCents: number;

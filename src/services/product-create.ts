@@ -8,6 +8,7 @@ import type { AppContext } from "./app-context.js";
 const SUPPORTED_CURRENCIES = new Set(["usd", "eur", "gbp", "cad", "aud"]);
 
 type ProductCreateInput = {
+  product_type?: unknown;
   name?: unknown;
   description?: unknown;
   price_cents?: unknown;
@@ -16,6 +17,34 @@ type ProductCreateInput = {
   custom_summary?: unknown;
   custom_receipt?: unknown;
   tags?: unknown;
+};
+
+const PRODUCT_TYPE_PRESETS: Record<ProductCreateDraft["productType"], { label: string; defaultTags: string[]; summaryHint: string }> = {
+  digital_product: {
+    label: "Digital Product",
+    defaultTags: ["digital-product"],
+    summaryHint: "Instant digital delivery.",
+  },
+  ebook: {
+    label: "Ebook",
+    defaultTags: ["ebook", "digital-reading"],
+    summaryHint: "Downloadable ebook purchase.",
+  },
+  bundle: {
+    label: "Bundle",
+    defaultTags: ["bundle", "multi-product"],
+    summaryHint: "Bundle access with multiple assets.",
+  },
+  membership: {
+    label: "Membership",
+    defaultTags: ["membership", "subscription"],
+    summaryHint: "Recurring membership access.",
+  },
+  course: {
+    label: "Course",
+    defaultTags: ["course", "learning"],
+    summaryHint: "Course access and learning materials.",
+  },
 };
 
 export function previewProductCreate(ctx: AppContext, input: ProductCreateInput) {
@@ -164,6 +193,7 @@ export async function refreshVariants(ctx: AppContext, productId: string) {
 }
 
 function validateAndNormalizeInput(input: ProductCreateInput): ProductCreateDraft {
+  const productType = parseProductType(input.product_type);
   const name = typeof input.name === "string" ? input.name.trim() : "";
   if (!name) throw new Error("name is required.");
 
@@ -176,6 +206,7 @@ function validateAndNormalizeInput(input: ProductCreateInput): ProductCreateDraf
   }
 
   return {
+    productType,
     name,
     description: optionalString(input.description),
     priceCents,
@@ -187,7 +218,20 @@ function validateAndNormalizeInput(input: ProductCreateInput): ProductCreateDraf
   };
 }
 
+function parseProductType(value: unknown): ProductCreateDraft["productType"] {
+  if (typeof value !== "string" || !value.trim()) return "digital_product";
+  const normalized = value.trim().toLowerCase();
+  const allowed: ProductCreateDraft["productType"][] = ["digital_product", "ebook", "bundle", "membership", "course"];
+  if (!allowed.includes(normalized as ProductCreateDraft["productType"])) {
+    throw new Error(`product_type must be one of: ${allowed.join(", ")}.`);
+  }
+  return normalized as ProductCreateDraft["productType"];
+}
+
 function buildApiPayload(input: ProductCreateDraft) {
+  const preset = PRODUCT_TYPE_PRESETS[input.productType];
+  const mergedTags = mergeTags(preset.defaultTags, input.tags);
+
   const payload: Record<string, string> = {
     name: input.name,
     price: String(input.priceCents),
@@ -196,22 +240,31 @@ function buildApiPayload(input: ProductCreateDraft) {
 
   if (input.description) payload.description = input.description;
   if (typeof input.published === "boolean") payload.published = String(input.published);
-  if (input.customSummary) payload.custom_summary = input.customSummary;
+  if (input.customSummary ?? preset.summaryHint) payload.custom_summary = input.customSummary ?? preset.summaryHint;
   if (input.customReceipt) payload.custom_receipt = input.customReceipt;
-  if (input.tags?.length) payload.tags = input.tags.join(",");
+  if (mergedTags.length) payload.tags = mergedTags.join(",");
 
   return payload;
 }
 
 function createPreview(input: ProductCreateDraft, payload: Record<string, string>) {
+  const preset = PRODUCT_TYPE_PRESETS[input.productType];
   return [
+    `Product type: ${preset.label} (${input.productType})`,
     `Product: ${input.name}`,
     `Price: ${input.priceCents} ${input.currency}`,
     `Publish immediately: ${input.published === undefined ? "not specified" : String(input.published)}`,
     `Description: ${input.description ?? "(none)"}`,
-    `Tags: ${input.tags?.join(", ") ?? "(none)"}`,
+    `Tags: ${payload.tags ?? "(none)"}`,
     `API payload: ${JSON.stringify(payload)}`,
   ].join("\n");
+}
+
+function mergeTags(defaultTags: string[], userTags?: string[]) {
+  const out = new Set<string>();
+  for (const tag of defaultTags) out.add(tag.trim());
+  for (const tag of userTags ?? []) out.add(tag.trim());
+  return Array.from(out).filter(Boolean);
 }
 
 function normalizeTags(value: unknown): string[] | undefined {
