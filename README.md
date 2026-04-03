@@ -1,6 +1,6 @@
-# Gumroad Personal Automation + MCP Shim
+# Gumroad Personal Automation + MCP Server
 
-A headless, single-owner Gumroad automation service with a **minimal MCP shim** at `/mcp`.
+A headless, single-owner Gumroad automation service with an MCP-compatible endpoint at `/mcp`.
 
 This keeps the original automation backend role intact:
 
@@ -13,7 +13,7 @@ This keeps the original automation backend role intact:
 
 And adds a thin MCP layer so ChatGPT or any MCP client can talk to the service directly.
 
-## What changed
+## Current capabilities
 
 The earlier personal fork was **not** an MCP server, which is why an MCP client got:
 
@@ -21,12 +21,15 @@ The earlier personal fork was **not** an MCP server, which is why an MCP client 
 {"error":"Not found"}
 ```
 
-This fork adds:
+This version provides:
 
 - `GET/POST/DELETE /mcp`
 - MCP tools for reading summaries, products, sales, jobs, events, and state
 - MCP tools for triggering sync jobs and license verification
 - optional static bearer protection for the MCP endpoint with `MCP_BEARER_TOKEN`
+- queued Gumroad Ping ingestion with stable deduplication
+- background webhook processing with event status tracking (`pending`, `processed`, `failed`)
+- normalized Gumroad Ping sale storage (`/admin/events/gumroad-sales`)
 
 ## Endpoints
 
@@ -125,6 +128,21 @@ npm run build
 npm run dev
 ```
 
+### Optional environment variables
+
+```env
+GUMROAD_WEBHOOK_SECRET=...
+GUMROAD_WEBHOOK_VERIFICATION_MODE=auto   # auto | header-hmac | body-secret
+PROCESS_WEBHOOK_EVENTS_INTERVAL_MS=30000
+ENABLE_INTERVAL_JOBS=true
+```
+
+If interval jobs are disabled, you can run webhook processing manually with:
+
+```bash
+npm run job:process-webhooks
+```
+
 ## ChatGPT / MCP connection
 
 Your MCP endpoint is:
@@ -170,6 +188,40 @@ Webhook ingestion stores events first and processes them asynchronously in the b
 Normalized Gumroad Ping sale records are persisted and include fields such as `sale_id`, `sale_timestamp`, `order_number`, `seller_id`, `product_id`, `product_name`, `email`, `price`, `recurrence`, `variants`, `license_key`, `quantity`, and `refunded`.
 
 If your Gumroad Ping setup uses a different verification convention, adjust `verifyWebhookRequest()` in `src/utils/http.ts`.
+
+### Webhook test examples
+
+Valid payload:
+
+```bash
+curl -X POST http://localhost:8788/webhooks/gumroad/ping \
+  -H "Content-Type: application/json" \
+  -d @docs/fixtures/gumroad-webhook-sale.json
+```
+
+Malformed payload (should return `400` and record a failed event):
+
+```bash
+curl -X POST http://localhost:8788/webhooks/gumroad/ping \
+  -H "Content-Type: application/json" \
+  --data-binary @docs/fixtures/gumroad-webhook-malformed.txt
+```
+
+Process queued events:
+
+```bash
+curl -X POST http://localhost:8788/admin/jobs/process-webhooks \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"batchSize":25}'
+```
+
+Inspect normalized Gumroad Ping sales:
+
+```bash
+curl http://localhost:8788/admin/events/gumroad-sales?limit=50 \
+  -H "Authorization: Bearer change-me"
+```
 
 ## Example admin calls
 
