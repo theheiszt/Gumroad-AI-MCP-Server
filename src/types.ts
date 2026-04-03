@@ -1,35 +1,34 @@
 export type ProductStatus = "published" | "draft";
 
+export type VariantCategory = {
+  id: string;
+  productId: string;
+  name: string;
+  createdAt?: string;
+  updatedAt?: string;
+  raw?: Record<string, unknown>;
+};
+
 export type Variant = {
   id: string;
   productId: string;
   categoryId?: string;
   name: string;
   priceDifferenceCents?: number;
-  description?: string;
   quantityLeft?: number;
-  raw?: Record<string, unknown>;
-};
-
-export type VariantCategory = {
-  id: string;
-  productId: string;
-  title: string;
-  options: Variant[];
   raw?: Record<string, unknown>;
 };
 
 export type OfferCode = {
   id: string;
   productId: string;
-  name: string;
   code: string;
+  name?: string;
   amountOffCents?: number;
   percentOff?: number;
   maxUses?: number;
   uses?: number;
-  valid?: boolean;
-  expiresAt?: string;
+  status: "active" | "disabled";
   raw?: Record<string, unknown>;
 };
 
@@ -44,7 +43,8 @@ export type Product = {
   description?: string;
   salesCount?: number;
   tags?: string[];
-  variants?: VariantCategory[];
+  variantCategories?: VariantCategory[];
+  variants?: Variant[];
   offerCodes?: OfferCode[];
   raw?: Record<string, unknown>;
 };
@@ -117,31 +117,51 @@ export type WriteActionLog = {
   actionType: WriteActionType;
 export type ConfirmationStatus = "pending" | "executing" | "completed" | "expired" | "failed";
 
+export type WriteActionType =
+  | "product_create"
+  | "variant_category_create"
+  | "variant_category_edit"
+  | "variant_category_delete"
+  | "variant_create"
+  | "variant_edit"
+  | "variant_delete"
+  | "offer_code_create"
+  | "offer_code_list"
+  | "offer_code_disable"
+  | "offer_code_delete";
+
 export type WriteActionLog = {
   id: string;
-  actionType: string;
+  actionType: WriteActionType;
   status: "attempted" | "completed" | "failed";
   at: string;
   confirmationId?: string;
   details?: Record<string, unknown>;
 };
 
-export type WriteConfirmationRecord = {
+export type WriteConfirmation = {
   confirmationId: string;
   actionType: WriteActionType;
   payloadHash: string;
   expiresAt: string;
-  status: WriteConfirmationStatus;
+  status: ConfirmationStatus;
   createdAt: string;
   updatedAt: string;
   requiresPhrase: boolean;
   input: Record<string, unknown>;
-  apiPayload: Record<string, string>;
+  apiRequest: {
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+    path: string;
+    payload?: Record<string, string>;
+  };
   preview: string;
-  productId?: string;
   result?: {
     executedAt: string;
     response: Record<string, unknown>;
+  };
+  error?: string;
+};
+
 export type ProductCreateDraft = {
   name: string;
   description?: string;
@@ -179,7 +199,7 @@ export type StoreState = {
   webhookEvents: Record<string, WebhookEvent>;
   licenseChecks: LicenseCheck[];
   jobRuns: JobRun[];
-  writeConfirmations: Record<string, WriteConfirmationRecord>;
+  writeConfirmations: Record<string, WriteConfirmation>;
   productCreateConfirmations: Record<string, ProductCreateConfirmation>;
   writeActions: WriteActionLog[];
   meta: {

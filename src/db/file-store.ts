@@ -13,6 +13,7 @@ import type {
   WriteActionLog,
   WriteConfirmationRecord,
   Product,
+  WriteConfirmation,
   ProductCreateConfirmation,
   Sale,
   SalesSummary,
@@ -178,6 +179,27 @@ export class FileStore {
     const next = updater(current);
     this.state.writeConfirmations[confirmationId] = next;
 
+  recordWriteConfirmation(record: WriteConfirmation) {
+    this.state.writeConfirmations[record.confirmationId] = record;
+    this.persist();
+  }
+
+  getWriteConfirmation(confirmationId: string) {
+    return this.state.writeConfirmations[confirmationId];
+  }
+
+  updateWriteConfirmation(
+    confirmationId: string,
+    updater: (current: WriteConfirmation) => WriteConfirmation,
+  ) {
+    const current = this.state.writeConfirmations[confirmationId];
+    if (!current) return undefined;
+    const next = updater(current);
+    this.state.writeConfirmations[confirmationId] = next;
+    this.persist();
+    return next;
+  }
+
   recordProductCreateConfirmation(record: ProductCreateConfirmation) {
     this.state.productCreateConfirmations[record.confirmationId] = record;
     this.persist();
@@ -234,6 +256,27 @@ export class FileStore {
 
   listRecentLicenseChecks(limit = 20) {
     return this.state.licenseChecks.slice(0, limit);
+  }
+
+  upsertProductVariantCategories(productId: string, categories: Product["variantCategories"] = []) {
+    const existing = this.state.products[productId];
+    if (!existing) return;
+    existing.variantCategories = categories;
+    this.persist();
+  }
+
+  upsertProductVariants(productId: string, variants: Product["variants"] = []) {
+    const existing = this.state.products[productId];
+    if (!existing) return;
+    existing.variants = variants;
+    this.persist();
+  }
+
+  upsertProductOfferCodes(productId: string, offerCodes: Product["offerCodes"] = []) {
+    const existing = this.state.products[productId];
+    if (!existing) return;
+    existing.offerCodes = offerCodes;
+    this.persist();
   }
 
   createSummary(windowDays: number): SalesSummary {

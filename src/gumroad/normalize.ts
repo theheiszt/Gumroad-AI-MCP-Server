@@ -167,3 +167,52 @@ function readString(payload: Record<string, unknown>, key: string) {
   const value = payload[key];
   return typeof value === "string" && value ? value : undefined;
 }
+
+
+export function normalizeVariantCategory(input: Record<string, any>, productIdOverride?: string): VariantCategory {
+  return {
+    id: String(input.id ?? input.category_id ?? randomId("variant_cat")),
+    productId: String(productIdOverride ?? input.product_id ?? ""),
+    name: String(input.name ?? input.title ?? "Untitled variant category"),
+    createdAt: typeof input.created_at === "string" ? input.created_at : undefined,
+    updatedAt: typeof input.updated_at === "string" ? input.updated_at : undefined,
+    raw: input,
+  };
+}
+
+export function normalizeVariant(input: Record<string, any>, productIdOverride?: string): Variant {
+  return {
+    id: String(input.id ?? input.variant_id ?? randomId("variant")),
+    productId: String(productIdOverride ?? input.product_id ?? ""),
+    categoryId:
+      typeof input.variant_category_id === "string"
+        ? input.variant_category_id
+        : typeof input.category_id === "string"
+          ? input.category_id
+          : undefined,
+    name: String(input.name ?? input.title ?? "Untitled variant"),
+    priceDifferenceCents: Number.isFinite(Number(input.price_difference_cents ?? input.price_difference))
+      ? Number(input.price_difference_cents ?? input.price_difference)
+      : undefined,
+    quantityLeft: Number.isFinite(Number(input.quantity_left)) ? Number(input.quantity_left) : undefined,
+    raw: input,
+  };
+}
+
+export function normalizeOfferCode(input: Record<string, any>, productIdOverride?: string): OfferCode {
+  const active = input.disabled === true || input.archived === true ? false : true;
+  return {
+    id: String(input.id ?? input.offer_code_id ?? randomId("offer")),
+    productId: String(productIdOverride ?? input.product_id ?? ""),
+    code: String(input.code ?? input.offer_code ?? ""),
+    name: typeof input.name === "string" ? input.name : undefined,
+    amountOffCents: Number.isFinite(Number(input.amount_off_cents ?? input.amount_cents))
+      ? Number(input.amount_off_cents ?? input.amount_cents)
+      : undefined,
+    percentOff: Number.isFinite(Number(input.percent_off ?? input.amount_percentage)) ? Number(input.percent_off ?? input.amount_percentage) : undefined,
+    maxUses: Number.isFinite(Number(input.max_uses)) ? Number(input.max_uses) : undefined,
+    uses: Number.isFinite(Number(input.uses)) ? Number(input.uses) : undefined,
+    status: active ? "active" : "disabled",
+    raw: input,
+  };
+}
