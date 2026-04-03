@@ -115,13 +115,20 @@ export class GumroadClient {
     return rows.map((row: Record<string, any>) => normalizeOfferCode(row, productId));
   }
 
-  async disableOfferCode(): Promise<never> {
-    throw new Error("Unsupported operation: disable offer code endpoint is not available in current Gumroad API wrapper.");
+  async disableOfferCode(productId: string, offerCodeId: string): Promise<Record<string, unknown>> {
+    if (!productId || !offerCodeId) {
+      throw new Error("disable offer code endpoint requires productId and offerCodeId.");
+    }
+    return this.requestJson(
+      "PATCH",
+      `/v2/products/${encodeURIComponent(productId)}/offer_codes/${encodeURIComponent(offerCodeId)}`,
+      new URLSearchParams({ disabled: "true" }),
+    );
   }
 
   async deleteOfferCode(productId?: string, offerCodeId?: string): Promise<Record<string, unknown>> {
     if (!productId || !offerCodeId) {
-      throw new Error("Unsupported operation: delete offer code endpoint requires productId and offerCodeId.");
+      throw new Error("delete offer code endpoint requires productId and offerCodeId.");
     }
     return this.requestJson("DELETE", `/v2/products/${encodeURIComponent(productId)}/offer_codes/${encodeURIComponent(offerCodeId)}`);
   }

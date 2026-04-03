@@ -496,9 +496,11 @@ Stored data includes:
 - Confirm moves the record to `executing` before any API call, so reuse of the same `confirmation_id` returns an error and avoids double-submit.
 - Every attempted/completed/failed write is persisted in `writeActions`, and confirm stores the full Gumroad API response in the confirmation result.
 
-## Unsupported endpoints
+## Offer code write endpoints
 
-- `offer_code_disable` and `offer_code_delete` intentionally fail fast with a clear error because the current API wrapper does not expose reliable endpoints for those operations.
+- `offer_code_disable` confirms via `PATCH /v2/products/:productId/offer_codes/:offerCodeId` with `disabled=true`.
+- `offer_code_delete` confirms via `DELETE /v2/products/:productId/offer_codes/:offerCodeId`.
+- Both actions require `product_id` and `offer_code_id` in preview payloads.
 - Preview stores a pending confirmation record with `confirmation_id`, `payload_hash`, and `expires_at`.
 - Confirm moves the record to `executing` before any API call, so reuse of the same `confirmation_id` returns an error and avoids double-submit.
 - Every attempted/completed/failed write is persisted in `writeActions`, and confirm stores the full Gumroad API response in the confirmation result.
@@ -542,6 +544,20 @@ curl -X POST http://localhost:80/admin/offer-codes/preview_create \
   -d '{"product_id":"prod_123","name":"Summer","code":"SUMMER25","percent_off":25}'
 ```
 
-### Unsupported endpoint note
+### Offer code disable preview
 
-`offer_code_disable` previews are accepted for safety/approval tracking, but confirm currently fails loudly with `501 Unsupported` because the configured Gumroad endpoint set does not provide a confirmed disable operation distinct from delete in this app.
+```bash
+curl -X POST http://localhost:80/admin/offer-codes/preview_disable \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id":"prod_123","offer_code_id":"oc_123"}'
+```
+
+### Offer code delete preview
+
+```bash
+curl -X POST http://localhost:80/admin/offer-codes/preview_delete \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id":"prod_123","offer_code_id":"oc_123"}'
+```

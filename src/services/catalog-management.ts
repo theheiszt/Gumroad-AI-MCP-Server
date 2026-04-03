@@ -209,9 +209,24 @@ function buildActionPlan(actionType: WriteActionType, input: CatalogActionInput)
         preview: `List offer codes for product ${productId}.`,
       };
     }
-    case "offer_code_disable":
-    case "offer_code_delete":
-      throw new Error(`Unsupported action_type: ${actionType}. Current Gumroad client does not expose this endpoint.`);
+    case "offer_code_disable": {
+      const productId = requiredString(input.product_id, "product_id");
+      const offerCodeId = requiredString(input.offer_code_id, "offer_code_id");
+      return {
+        input: { product_id: productId, offer_code_id: offerCodeId },
+        apiRequest: { method: "PATCH" as const, path: `/v2/products/${productId}/offer_codes/${offerCodeId}`, payload: { disabled: "true" } },
+        preview: `Disable offer code ${offerCodeId} for product ${productId}.`,
+      };
+    }
+    case "offer_code_delete": {
+      const productId = requiredString(input.product_id, "product_id");
+      const offerCodeId = requiredString(input.offer_code_id, "offer_code_id");
+      return {
+        input: { product_id: productId, offer_code_id: offerCodeId },
+        apiRequest: { method: "DELETE" as const, path: `/v2/products/${productId}/offer_codes/${offerCodeId}` },
+        preview: `Delete offer code ${offerCodeId} for product ${productId}.`,
+      };
+    }
   }
 }
 
@@ -277,10 +292,22 @@ async function executeAction(ctx: AppContext, actionType: WriteActionType, input
       ctx.store.upsertProductOfferCodes(productId, offerCodes);
       return { product_id: productId, offer_codes: offerCodes };
     }
-    case "offer_code_disable":
-      return ctx.client.disableOfferCode();
-    case "offer_code_delete":
-      return ctx.client.deleteOfferCode();
+    case "offer_code_disable": {
+      const productId = requiredString(input.product_id, "product_id");
+      const offerCodeId = requiredString(input.offer_code_id, "offer_code_id");
+      const response = await ctx.client.disableOfferCode(productId, offerCodeId);
+      const offerCodes = await ctx.client.listOfferCodes(productId);
+      ctx.store.upsertProductOfferCodes(productId, offerCodes);
+      return { ...response, product_id: productId, offer_code_id: offerCodeId };
+    }
+    case "offer_code_delete": {
+      const productId = requiredString(input.product_id, "product_id");
+      const offerCodeId = requiredString(input.offer_code_id, "offer_code_id");
+      const response = await ctx.client.deleteOfferCode(productId, offerCodeId);
+      const offerCodes = await ctx.client.listOfferCodes(productId);
+      ctx.store.upsertProductOfferCodes(productId, offerCodes);
+      return { ...response, product_id: productId, offer_code_id: offerCodeId };
+    }
   }
 }
 
