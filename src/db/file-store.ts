@@ -102,8 +102,9 @@ export class FileStore {
 
   listSales(limit = 50, after?: string) {
     const afterTime = after ? new Date(after).getTime() : undefined;
+    const hasAfterTime = afterTime !== undefined && Number.isFinite(afterTime);
     return Object.values(this.state.sales)
-      .filter((sale) => (afterTime ? new Date(sale.occurredAt).getTime() >= afterTime : true))
+      .filter((sale) => (hasAfterTime ? new Date(sale.occurredAt).getTime() >= afterTime : true))
       .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
       .slice(0, limit);
   }

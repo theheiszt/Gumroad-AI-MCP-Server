@@ -19,6 +19,11 @@ import {
 
 const ctx = createAppContext();
 
+function numberOrFallback(value: string | null | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   if (!req.url) return sendJson(res, 400, { error: "Missing URL" });
   const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
@@ -127,7 +132,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     }
 
     if (req.method === "GET" && url.pathname === "/admin/sales") {
-      const limit = Number(url.searchParams.get("limit") ?? 50);
+      const limit = numberOrFallback(url.searchParams.get("limit"), 50);
       const after = url.searchParams.get("after") ?? undefined;
       const sales = ctx.store.listSales(limit, after);
       return sendJson(res, 200, {
@@ -139,22 +144,22 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     }
 
     if (req.method === "GET" && url.pathname === "/admin/summary") {
-      const days = Number(url.searchParams.get("days") ?? 7);
+      const days = numberOrFallback(url.searchParams.get("days"), 7);
       return sendJson(res, 200, ctx.store.createSummary(days));
     }
 
     if (req.method === "GET" && url.pathname === "/admin/events") {
-      const limit = Number(url.searchParams.get("limit") ?? 50);
+      const limit = numberOrFallback(url.searchParams.get("limit"), 50);
       return sendJson(res, 200, { events: ctx.store.listWebhookEvents(limit) });
     }
 
     if (req.method === "GET" && url.pathname === "/admin/jobs") {
-      const limit = Number(url.searchParams.get("limit") ?? 20);
+      const limit = numberOrFallback(url.searchParams.get("limit"), 20);
       return sendJson(res, 200, { jobs: ctx.store.listJobRuns(limit) });
     }
 
     if (req.method === "GET" && url.pathname === "/admin/licenses") {
-      const limit = Number(url.searchParams.get("limit") ?? 20);
+      const limit = numberOrFallback(url.searchParams.get("limit"), 20);
       return sendJson(res, 200, { checks: ctx.store.listRecentLicenseChecks(limit) });
     }
 
@@ -172,7 +177,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
         after: typeof body.after === "string" ? body.after : undefined,
         before: typeof body.before === "string" ? body.before : undefined,
         productId: typeof body.productId === "string" ? body.productId : undefined,
-        limit: typeof body.limit === "string" ? Number(body.limit) : typeof body.limit === "number" ? body.limit : undefined,
+        limit:
+          typeof body.limit === "string"
+            ? numberOrFallback(body.limit, 100)
+            : typeof body.limit === "number" && Number.isFinite(body.limit)
+              ? body.limit
+              : undefined,
       });
       return sendJson(res, 200, { ok: true, job: "sync-sales", result });
     }
@@ -180,7 +190,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "POST" && url.pathname === "/admin/jobs/daily-summary") {
       const rawBody = await readRawBody(req);
       const body = parseBody(req.headers["content-type"], rawBody);
-      const result = await dailySummaryJob(ctx, typeof body.days === "string" ? Number(body.days) : typeof body.days === "number" ? body.days : 1);
+      const result = await dailySummaryJob(
+        ctx,
+        typeof body.days === "string"
+          ? numberOrFallback(body.days, 1)
+          : typeof body.days === "number" && Number.isFinite(body.days)
+            ? body.days
+            : 1,
+      );
       return sendJson(res, 200, { ok: true, job: "daily-summary", result });
     }
 
