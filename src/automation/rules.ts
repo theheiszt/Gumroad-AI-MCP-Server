@@ -9,14 +9,18 @@ type WebhookDelivery = {
 export async function dispatchRuleOutputs(deliveries: WebhookDelivery[]) {
   for (const delivery of deliveries) {
     if (!delivery.url) continue;
-    try {
-      await fetch(delivery.url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(delivery.payload),
-      });
-    } catch (error) {
-      console.error(`[automation] failed to deliver ${delivery.kind} webhook`, error);
+    const response = await fetch(delivery.url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(delivery.payload),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      const details = body ? ` - ${body.slice(0, 500)}` : "";
+      throw new Error(
+        `[automation] ${delivery.kind} webhook failed with status ${response.status} ${response.statusText}${details}`,
+      );
     }
   }
 }
