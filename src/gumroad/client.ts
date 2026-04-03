@@ -55,6 +55,70 @@ export class GumroadClient {
     return sales.slice(0, limit);
   }
 
+  async createProduct(payload: Record<string, string>) {
+    const body = new URLSearchParams(payload);
+    return this.requestJson("POST", "/v2/products", body);
+  }
+
+  async createVariantCategory(productId: string, payload: Record<string, string>) {
+    const body = new URLSearchParams(stripInternalPayloadKeys(payload));
+    return this.requestJson("POST", `/v2/products/${encodeURIComponent(productId)}/variant_categories`, body);
+  }
+
+  async editVariantCategory(productId: string, categoryId: string, payload: Record<string, string>) {
+    const body = new URLSearchParams(stripInternalPayloadKeys(payload));
+    return this.requestJson(
+      "PUT",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(categoryId)}`,
+      body,
+    );
+  }
+
+  async deleteVariantCategory(productId: string, categoryId: string) {
+    return this.requestJson(
+      "DELETE",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(categoryId)}`,
+    );
+  }
+
+  async createVariant(productId: string, categoryId: string, payload: Record<string, string>) {
+    const body = new URLSearchParams(stripInternalPayloadKeys(payload));
+    return this.requestJson(
+      "POST",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(categoryId)}/variants`,
+      body,
+    );
+  }
+
+  async editVariant(productId: string, categoryId: string, variantId: string, payload: Record<string, string>) {
+    const body = new URLSearchParams(stripInternalPayloadKeys(payload));
+    return this.requestJson(
+      "PUT",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(categoryId)}/variants/${encodeURIComponent(variantId)}`,
+      body,
+    );
+  }
+
+  async deleteVariant(productId: string, categoryId: string, variantId: string) {
+    return this.requestJson(
+      "DELETE",
+      `/v2/products/${encodeURIComponent(productId)}/variant_categories/${encodeURIComponent(categoryId)}/variants/${encodeURIComponent(variantId)}`,
+    );
+  }
+
+  async createOfferCode(productId: string, payload: Record<string, string>) {
+    const body = new URLSearchParams(stripInternalPayloadKeys(payload));
+    return this.requestJson("POST", `/v2/products/${encodeURIComponent(productId)}/offer_codes`, body);
+  }
+
+  async listOfferCodes(productId: string) {
+    return this.requestJson("GET", `/v2/products/${encodeURIComponent(productId)}/offer_codes`);
+  }
+
+  async deleteOfferCode(productId: string, offerCodeId: string) {
+    return this.requestJson("DELETE", `/v2/products/${encodeURIComponent(productId)}/offer_codes/${encodeURIComponent(offerCodeId)}`);
+  }
+
   async verifyLicense(productId: string, licenseKey: string): Promise<LicenseCheck> {
     const body = new URLSearchParams({
       product_id: productId,
@@ -65,14 +129,18 @@ export class GumroadClient {
     return normalizeLicenseCheck(productId, licenseKey, response);
   }
 
-  private async requestJson(method: "GET" | "POST", path: string, formBody?: URLSearchParams) {
+  private async requestJson(method: "GET" | "POST" | "PUT" | "DELETE", path: string, formBody?: URLSearchParams) {
     const headers: Record<string, string> = {};
     let url = `${GUMROAD_API}${path}`;
     let body: string | undefined;
 
-    if (method === "GET") {
+    if (method === "GET" || method === "DELETE") {
       const separator = url.includes("?") ? "&" : "?";
       url = `${url}${separator}access_token=${encodeURIComponent(this.accessToken)}`;
+      if (method === "DELETE" && formBody) {
+        const extra = formBody.toString();
+        if (extra) url = `${url}&${extra}`;
+      }
     } else {
       headers["content-type"] = "application/x-www-form-urlencoded";
       const form = formBody ?? new URLSearchParams();
@@ -89,6 +157,11 @@ export class GumroadClient {
     }
     return json;
   }
+}
+
+function stripInternalPayloadKeys(payload: Record<string, string>) {
+  const entries = Object.entries(payload).filter(([key]) => !["product_id", "variant_category_id", "variant_id", "offer_code_id"].includes(key));
+  return Object.fromEntries(entries);
 }
 
 function safeJsonParse(text: string) {

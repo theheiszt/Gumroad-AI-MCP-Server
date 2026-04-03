@@ -1,6 +1,18 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { JobRun, LicenseCheck, Product, Sale, SalesSummary, StoreState, WebhookEvent } from "../types.js";
+import type {
+  JobRun,
+  LicenseCheck,
+  OfferCode,
+  Product,
+  Sale,
+  SalesSummary,
+  StoreState,
+  VariantCategory,
+  WebhookEvent,
+  WriteActionLog,
+  WriteConfirmationRecord,
+} from "../types.js";
 import { formatMoney, isoNow } from "../utils/format.js";
 
 function createEmptyState(): StoreState {
@@ -11,6 +23,8 @@ function createEmptyState(): StoreState {
     webhookEvents: {},
     licenseChecks: [],
     jobRuns: [],
+    writeConfirmations: {},
+    writeActions: [],
     meta: {
       createdAt: now,
       updatedAt: now,
@@ -29,7 +43,13 @@ export class FileStore {
   private read(): StoreState {
     try {
       const raw = readFileSync(this.filePath, "utf8");
-      return { ...createEmptyState(), ...(JSON.parse(raw) as StoreState) };
+      const parsed = JSON.parse(raw) as Partial<StoreState>;
+      const migrated = {
+        ...createEmptyState(),
+        ...parsed,
+        writeConfirmations: (parsed as any).writeConfirmations ?? (parsed as any).productCreateConfirmations ?? {},
+      } as StoreState;
+      return migrated;
     } catch {
       return createEmptyState();
     }
@@ -48,7 +68,13 @@ export class FileStore {
 
   upsertProducts(products: Product[]) {
     for (const product of products) {
-      this.state.products[product.id] = product;
+      const existing = this.state.products[product.id];
+      this.state.products[product.id] = {
+        ...existing,
+        ...product,
+        variants: product.variants ?? existing?.variants,
+        offerCodes: product.offerCodes ?? existing?.offerCodes,
+      };
     }
     this.state.meta.lastProductSyncAt = isoNow();
     this.persist();
@@ -70,6 +96,36 @@ export class FileStore {
 
     this.state.meta.lastSalesSyncAt = isoNow();
     this.persist();
+  }
+
+  ensureProduct(productId: string) {
+    if (!this.state.products[productId]) {
+      this.state.products[productId] = {
+        id: productId,
+        name: `Product ${productId}`,
+        permalink: "",
+        priceCents: 0,
+        currency: "USD",
+        status: "draft",
+        createdAt: isoNow(),
+      };
+    }
+  }
+
+  setProductVariants(productId: string, categories: VariantCategory[]) {
+    this.ensureProduct(productId);
+    this.state.products[productId].variants = categories;
+    this.persist();
+  }
+
+  setProductOfferCodes(productId: string, offerCodes: OfferCode[]) {
+    this.ensureProduct(productId);
+    this.state.products[productId].offerCodes = offerCodes;
+    this.persist();
+  }
+
+  getProduct(productId: string) {
+    return this.state.products[productId];
   }
 
   recordWebhookEvent(event: WebhookEvent) {
@@ -96,14 +152,46 @@ export class FileStore {
     this.persist();
   }
 
+  recordWriteConfirmation(record: WriteConfirmationRecord) {
+    this.state.writeConfirmations[record.confirmationId] = record;
+    this.persist();
+  }
+
+  getWriteConfirmation(confirmationId: string) {
+    return this.state.writeConfirmations[confirmationId];
+  }
+
+  updateWriteConfirmation(
+    confirmationId: string,
+    updater: (current: WriteConfirmationRecord) => WriteConfirmationRecord,
+  ) {
+    const current = this.state.writeConfirmations[confirmationId];
+    if (!current) return undefined;
+    const next = updater(current);
+    this.state.writeConfirmations[confirmationId] = next;
+    this.persist();
+    return next;
+  }
+
+  recordWriteAction(action: WriteActionLog) {
+    this.state.writeActions.unshift(action);
+    this.state.writeActions = this.state.writeActions.slice(0, 1000);
+    this.persist();
+  }
+
+  listWriteActions(limit = 50) {
+    return this.state.writeActions.slice(0, limit);
+  }
+
   listProducts() {
     return Object.values(this.state.products).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   listSales(limit = 50, after?: string) {
     const afterTime = after ? new Date(after).getTime() : undefined;
+    const hasAfterTime = afterTime !== undefined && Number.isFinite(afterTime);
     return Object.values(this.state.sales)
-      .filter((sale) => (afterTime ? new Date(sale.occurredAt).getTime() >= afterTime : true))
+      .filter((sale) => (hasAfterTime ? new Date(sale.occurredAt).getTime() >= afterTime : true))
       .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
       .slice(0, limit);
   }

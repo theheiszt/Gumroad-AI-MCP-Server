@@ -1,24 +1,89 @@
-import type { LicenseCheck, Product, Sale, WebhookEvent } from "../types.js";
+import type { LicenseCheck, OfferCode, Product, Sale, Variant, VariantCategory, WebhookEvent } from "../types.js";
 import { isoNow, randomId } from "../utils/format.js";
 
 export function normalizeProduct(input: Record<string, any>): Product {
+  const productId = String(input.id);
+  const variantCategories = normalizeVariantCategories(input.variants ?? input.variant_categories, productId);
+  const offerCodes = normalizeOfferCodes(input.offer_codes, productId);
+
   return {
-    id: String(input.id),
+    id: productId,
     name: String(input.name ?? "Untitled product"),
     permalink: String(input.short_url ?? input.product_permalink ?? input.custom_permalink ?? ""),
     priceCents: Number(input.price ?? input.price_cents ?? 0),
     currency: String(input.currency ?? "USD").toUpperCase(),
     status: input.published === false ? "draft" : "published",
     createdAt: String(input.created_at ?? isoNow()),
-    description: typeof input.description === "string"
-      ? input.description
-      : typeof input.custom_summary === "string"
-        ? input.custom_summary
-        : undefined,
+    description:
+      typeof input.description === "string"
+        ? input.description
+        : typeof input.custom_summary === "string"
+          ? input.custom_summary
+          : undefined,
     salesCount: input.sales_count != null ? Number(input.sales_count) : undefined,
     tags: Array.isArray(input.tags) ? input.tags.map((value: unknown) => String(value)) : undefined,
+    variants: variantCategories.length ? variantCategories : undefined,
+    offerCodes: offerCodes.length ? offerCodes : undefined,
     raw: input,
   };
+}
+
+export function normalizeVariantCategory(input: Record<string, any>, productId: string): VariantCategory {
+  return {
+    id: String(input.id ?? input.variant_category_id ?? randomId("variant_category")),
+    productId,
+    title: String(input.title ?? input.name ?? "Untitled variant category"),
+    options: normalizeVariants(input.options ?? input.variants, productId, String(input.id ?? input.variant_category_id ?? "")),
+    raw: input,
+  };
+}
+
+export function normalizeVariant(input: Record<string, any>, productId: string, categoryId?: string): Variant {
+  return {
+    id: String(input.id ?? input.variant_id ?? randomId("variant")),
+    productId,
+    categoryId,
+    name: String(input.name ?? input.option ?? "Untitled variant"),
+    priceDifferenceCents:
+      input.price_difference != null || input.price_difference_cents != null
+        ? Number(input.price_difference ?? input.price_difference_cents)
+        : undefined,
+    description: typeof input.description === "string" ? input.description : undefined,
+    quantityLeft: input.quantity_left != null ? Number(input.quantity_left) : undefined,
+    raw: input,
+  };
+}
+
+export function normalizeOfferCode(input: Record<string, any>, productId: string): OfferCode {
+  return {
+    id: String(input.id ?? input.offer_code_id ?? randomId("offer")),
+    productId,
+    name: String(input.name ?? input.code ?? "Unnamed offer"),
+    code: String(input.code ?? input.name ?? ""),
+    amountOffCents:
+      input.amount_off != null || input.amount_off_cents != null ? Number(input.amount_off ?? input.amount_off_cents) : undefined,
+    percentOff: input.percent_off != null ? Number(input.percent_off) : undefined,
+    maxUses: input.max_uses != null ? Number(input.max_uses) : undefined,
+    uses: input.uses != null ? Number(input.uses) : undefined,
+    valid: input.valid != null ? Boolean(input.valid) : undefined,
+    expiresAt: typeof input.expires_at === "string" ? input.expires_at : undefined,
+    raw: input,
+  };
+}
+
+export function normalizeVariantCategories(input: unknown, productId: string): VariantCategory[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((row) => normalizeVariantCategory((row ?? {}) as Record<string, any>, productId));
+}
+
+export function normalizeVariants(input: unknown, productId: string, categoryId?: string): Variant[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((row) => normalizeVariant((row ?? {}) as Record<string, any>, productId, categoryId));
+}
+
+export function normalizeOfferCodes(input: unknown, productId: string): OfferCode[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((row) => normalizeOfferCode((row ?? {}) as Record<string, any>, productId));
 }
 
 export function normalizeSale(input: Record<string, any>): Sale {

@@ -58,6 +58,23 @@ Routes:
 - `POST /admin/jobs/sync-sales`
 - `POST /admin/jobs/daily-summary`
 - `POST /admin/licenses/verify`
+- `POST /admin/products/preview_product_create`
+- `POST /admin/products/confirm_product_create`
+- `GET /admin/write-actions?limit=50`
+- `POST /admin/writes/confirm`
+- `GET /admin/products/:productId/variants`
+- `GET /admin/products/:productId/offer-codes`
+- `POST /admin/products/:productId/variants/refresh`
+- `POST /admin/products/:productId/offer-codes/refresh`
+- `POST /admin/variants/categories/preview_create`
+- `POST /admin/variants/categories/preview_edit`
+- `POST /admin/variants/categories/preview_delete`
+- `POST /admin/variants/preview_create`
+- `POST /admin/variants/preview_edit`
+- `POST /admin/variants/preview_delete`
+- `POST /admin/offer-codes/preview_create`
+- `POST /admin/offer-codes/preview_delete`
+- `POST /admin/offer-codes/preview_disable`
 
 ## MCP tools
 
@@ -170,6 +187,80 @@ curl -X POST http://localhost:8788/admin/licenses/verify \
   -d '{"productId":"abc123","licenseKey":"XXXX-XXXX-XXXX"}'
 ```
 
+### Preview product creation (required phase 1)
+
+```bash
+curl -X POST http://localhost:8788/admin/products/preview_product_create \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":"Creator Toolkit",
+    "description":"Templates + prompts",
+    "price_cents":2900,
+    "currency":"USD",
+    "published":false,
+    "custom_summary":"Thanks for buying Creator Toolkit.",
+    "custom_receipt":"Need help? Reply to this receipt.",
+    "tags":["creator","templates"]
+  }'
+```
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "action_type": "preview_product_create",
+  "confirmation_id": "confirm_prod_create_xxx",
+  "expires_at": "2026-04-03T12:00:00.000Z",
+  "payload_hash": "1f...",
+  "status": "pending",
+  "requires_confirmation_phrase": false,
+  "preview": "Product: Creator Toolkit\nPrice: 2900 USD\n...",
+  "request_payload": {
+    "name": "Creator Toolkit",
+    "price": "2900",
+    "currency": "usd",
+    "description": "Templates + prompts",
+    "published": "false",
+    "custom_summary": "Thanks for buying Creator Toolkit.",
+    "custom_receipt": "Need help? Reply to this receipt.",
+    "tags": "creator,templates"
+  }
+}
+```
+
+### Confirm product creation (required phase 2)
+
+```bash
+curl -X POST http://localhost:8788/admin/products/confirm_product_create \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "confirmation_id":"confirm_prod_create_xxx",
+    "confirmation_phrase":"CONFIRM CREATE"
+  }'
+```
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "confirmation_id": "confirm_prod_create_xxx",
+  "action_type": "product_create",
+  "status": "completed",
+  "product_id": "abc123",
+  "summary": "Product creation completed for \"Creator Toolkit\".",
+  "full_response": {
+    "success": true,
+    "product": {
+      "id": "abc123"
+    }
+  }
+}
+```
+
 ## Suggested deployment pattern
 
 - run this as the real backend
@@ -192,5 +283,55 @@ Stored data includes:
 - webhook events
 - license check history
 - job run history
+- product-create confirmations (pending/executing/completed/failed/expired)
+- write action logs (attempted/completed/failed)
+
+## Product create safety model
+
+- Product create always runs in two phases: preview then confirm.
+- Preview stores a pending confirmation record with `confirmation_id`, `payload_hash`, and `expires_at`.
+- Confirm moves the record to `executing` before any API call, so reuse of the same `confirmation_id` returns an error and avoids double-submit.
+- Every attempted/completed/failed write is persisted in `writeActions`, and confirm stores the full Gumroad API response in the confirmation result.
 
 If you want a stronger production backend later, the clean next step is swapping `FileStore` for SQLite or Postgres without changing the Gumroad client or MCP tool surface.
+
+
+### Generic confirm for all write previews
+
+```bash
+curl -X POST http://localhost:8788/admin/writes/confirm \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"confirmation_id":"confirm_write_xxx"}'
+```
+
+### Variant category preview (create)
+
+```bash
+curl -X POST http://localhost:8788/admin/variants/categories/preview_create \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id":"prod_123","title":"Size"}'
+```
+
+### Variant preview (create)
+
+```bash
+curl -X POST http://localhost:8788/admin/variants/preview_create \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id":"prod_123","variant_category_id":"vc_123","name":"Large"}'
+```
+
+### Offer code preview (create)
+
+```bash
+curl -X POST http://localhost:8788/admin/offer-codes/preview_create \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id":"prod_123","name":"Summer","code":"SUMMER25","percent_off":25}'
+```
+
+### Unsupported endpoint note
+
+`offer_code_disable` previews are accepted for safety/approval tracking, but confirm currently fails loudly with `501 Unsupported` because the configured Gumroad endpoint set does not provide a confirmed disable operation distinct from delete in this app.
