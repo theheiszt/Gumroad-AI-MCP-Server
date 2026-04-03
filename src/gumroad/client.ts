@@ -55,6 +55,7 @@ export class GumroadClient {
     return sales.slice(0, limit);
   }
 
+
   async createProduct(payload: Record<string, string>) {
     const body = new URLSearchParams(payload);
     return this.requestJson("POST", "/v2/products", body);

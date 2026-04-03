@@ -20,6 +20,7 @@ import {
   refreshOfferCodes,
   refreshVariants,
 } from "./services/product-create.js";
+import { confirmProductCreate, previewProductCreate } from "./services/product-create.js";
 import { formatMoney } from "./utils/format.js";
 import {
   parseBody,
@@ -303,6 +304,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
           requires_confirmation_phrase: result.requiresPhrase,
           preview: result.preview,
           request_payload: result.apiPayload,
+        const result = previewProductCreate(ctx, body);
+        return sendJson(res, 200, {
+          ok: true,
+          action_type: "preview_product_create",
+          confirmation_id: result.confirmation.confirmationId,
+          expires_at: result.confirmation.expiresAt,
+          payload_hash: result.confirmation.payloadHash,
+          status: result.confirmation.status,
+          requires_confirmation_phrase: result.confirmation.requiresPhrase,
+          preview: result.preview,
+          request_payload: result.confirmation.apiPayload,
         });
       } catch (error) {
         return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
@@ -319,6 +331,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const status = confirmationErrorStatus(message);
+        const result = await confirmProductCreate(ctx, body);
+        return sendJson(res, 200, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const status = message.includes("already been used") ? 409 : message.includes("not found") ? 404 : 400;
         return sendJson(res, status, { ok: false, action_type: "confirm_product_create", error: message });
       }
     }

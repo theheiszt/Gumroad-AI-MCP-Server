@@ -28,6 +28,36 @@ export function previewWrite(ctx: AppContext, args: PreviewArgs) {
     actionType: args.actionType,
     payloadHash: hashPayload(args.apiPayload),
     expiresAt: new Date(Date.now() + config.productCreateConfirmationTtlMs).toISOString(),
+import type { AppContext } from "./app-context.js";
+import type { ProductCreateConfirmation, ProductCreateDraft } from "../types.js";
+import { isoNow, randomId } from "../utils/format.js";
+
+const SUPPORTED_CURRENCIES = new Set(["usd", "eur", "gbp", "cad", "aud"]);
+
+type ProductCreateInput = {
+  name?: unknown;
+  description?: unknown;
+  price_cents?: unknown;
+  currency?: unknown;
+  published?: unknown;
+  custom_summary?: unknown;
+  custom_receipt?: unknown;
+  tags?: unknown;
+};
+
+export function previewProductCreate(ctx: AppContext, input: ProductCreateInput) {
+  const normalized = validateAndNormalizeInput(input);
+  const apiPayload = buildApiPayload(normalized);
+  const payloadHash = hashPayload(apiPayload);
+  const createdAt = isoNow();
+  const expiresAt = new Date(Date.now() + config.productCreateConfirmationTtlMs).toISOString();
+  const confirmationId = randomId("confirm_prod_create");
+
+  const confirmation: ProductCreateConfirmation = {
+    confirmationId,
+    actionType: "product_create",
+    payloadHash,
+    expiresAt,
     status: "pending",
     createdAt,
     updatedAt: createdAt,
@@ -50,6 +80,35 @@ export async function confirmWrite(ctx: AppContext, args: ConfirmArgs) {
 
   if (new Date(confirmation.expiresAt).getTime() <= Date.now()) {
     ctx.store.updateWriteConfirmation(confirmationId, (current) => ({
+    input: normalized,
+    apiPayload,
+    preview: createPreview(normalized, apiPayload),
+  };
+
+  ctx.store.recordProductCreateConfirmation(confirmation);
+
+  return {
+    confirmation,
+    preview: confirmation.preview,
+  };
+}
+
+export async function confirmProductCreate(
+  ctx: AppContext,
+  args: { confirmation_id?: unknown; confirmation_phrase?: unknown },
+) {
+  const confirmationId = typeof args.confirmation_id === "string" ? args.confirmation_id.trim() : "";
+  if (!confirmationId) {
+    throw new Error("confirmation_id is required.");
+  }
+
+  const confirmation = ctx.store.getProductCreateConfirmation(confirmationId);
+  if (!confirmation) {
+    throw new Error("confirmation_id not found.");
+  }
+
+  if (new Date(confirmation.expiresAt).getTime() <= Date.now()) {
+    ctx.store.updateProductCreateConfirmation(confirmationId, (current) => ({
       ...current,
       status: "expired",
       updatedAt: isoNow(),
@@ -70,6 +129,7 @@ export async function confirmWrite(ctx: AppContext, args: ConfirmArgs) {
   }
 
   ctx.store.updateWriteConfirmation(confirmationId, (current) => ({
+  ctx.store.updateProductCreateConfirmation(confirmationId, (current) => ({
     ...current,
     status: "executing",
     updatedAt: isoNow(),
@@ -79,12 +139,17 @@ export async function confirmWrite(ctx: AppContext, args: ConfirmArgs) {
   ctx.store.recordWriteAction({
     id: randomId("write"),
     actionType: confirmation.actionType,
+    actionType: "product_create",
     status: "attempted",
     at: isoNow(),
     confirmationId,
     details: {
       productId: confirmation.productId,
       payloadHash: confirmation.payloadHash,
+      payloadHash: confirmation.payloadHash,
+      name: confirmation.input.name,
+      priceCents: confirmation.input.priceCents,
+      currency: confirmation.input.currency,
     },
   });
 
@@ -96,6 +161,17 @@ export async function confirmWrite(ctx: AppContext, args: ConfirmArgs) {
       status: "completed",
       updatedAt: executedAt,
       result: { executedAt, response },
+    const result = await ctx.client.createProduct(confirmation.apiPayload);
+
+    ctx.store.updateProductCreateConfirmation(confirmationId, (current) => ({
+      ...current,
+      status: "completed",
+      updatedAt: isoNow(),
+      result: {
+        executedAt: isoNow(),
+        response: result,
+        productId: typeof result?.product?.id === "string" ? result.product.id : undefined,
+      },
       error: undefined,
     }));
 
@@ -108,6 +184,13 @@ export async function confirmWrite(ctx: AppContext, args: ConfirmArgs) {
       details: {
         productId: confirmation.productId,
         payloadHash: confirmation.payloadHash,
+      actionType: "product_create",
+      status: "completed",
+      at: isoNow(),
+      confirmationId,
+      details: {
+        payloadHash: confirmation.payloadHash,
+        productId: typeof result?.product?.id === "string" ? result.product.id : undefined,
       },
     });
 
@@ -122,6 +205,16 @@ export async function confirmWrite(ctx: AppContext, args: ConfirmArgs) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     ctx.store.updateWriteConfirmation(confirmationId, (current) => ({
+      confirmation_id: confirmationId,
+      action_type: confirmation.actionType,
+      status: "completed",
+      product_id: typeof result?.product?.id === "string" ? result.product.id : null,
+      summary: `Product creation completed for \"${confirmation.input.name}\".`,
+      full_response: result,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.store.updateProductCreateConfirmation(confirmationId, (current) => ({
       ...current,
       status: "failed",
       updatedAt: isoNow(),
@@ -134,6 +227,14 @@ export async function confirmWrite(ctx: AppContext, args: ConfirmArgs) {
       at: isoNow(),
       confirmationId,
       details: { error: message, productId: confirmation.productId },
+      actionType: "product_create",
+      status: "failed",
+      at: isoNow(),
+      confirmationId,
+      details: {
+        payloadHash: confirmation.payloadHash,
+        error: message,
+      },
     });
     throw error;
   }
@@ -376,11 +477,32 @@ function normalizeProductCreateInput(input: Record<string, unknown>) {
   const priceCents = integerString(input.price_cents, "price_cents");
   if (Number(priceCents) <= 0) throw new Error("price_cents must be a positive integer.");
   const currency = optionalString(input.currency)?.toLowerCase() ?? "usd";
+function validateAndNormalizeInput(input: ProductCreateInput): ProductCreateDraft {
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  if (!name) throw new Error("name is required.");
+
+  const priceCentsNumber = typeof input.price_cents === "number" ? input.price_cents : Number(input.price_cents);
+  if (!Number.isInteger(priceCentsNumber) || priceCentsNumber <= 0) {
+    throw new Error("price_cents must be a positive integer.");
+  }
+
+  const currency = typeof input.currency === "string" ? input.currency.trim().toLowerCase() : "usd";
   if (!SUPPORTED_CURRENCIES.has(currency)) {
     throw new Error(`currency must be one of: ${Array.from(SUPPORTED_CURRENCIES).join(", ")}.`);
   }
 
   const published = parseOptionalBoolean(input.published);
+  const description = typeof input.description === "string" ? input.description.trim() : undefined;
+  const customSummary = typeof input.custom_summary === "string" ? input.custom_summary.trim() : undefined;
+  const customReceipt = typeof input.custom_receipt === "string" ? input.custom_receipt.trim() : undefined;
+
+  const published =
+    typeof input.published === "boolean"
+      ? input.published
+      : typeof input.published === "string"
+        ? input.published.toLowerCase() === "true"
+        : undefined;
+
   const tags = normalizeTags(input.tags);
 
   return {
@@ -391,6 +513,12 @@ function normalizeProductCreateInput(input: Record<string, unknown>) {
     published,
     custom_summary: optionalString(input.custom_summary),
     custom_receipt: optionalString(input.custom_receipt),
+    description,
+    priceCents: priceCentsNumber,
+    currency: currency.toUpperCase(),
+    published,
+    customSummary,
+    customReceipt,
     tags,
   };
 }
@@ -439,6 +567,12 @@ function normalizeTags(value: unknown): string[] | undefined {
       .filter(Boolean);
     return tags.length ? tags : undefined;
   }
+function normalizeTags(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) {
+    const tags = value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
+    return tags.length ? tags : undefined;
+  }
+
   if (typeof value === "string") {
     const tags = value
       .split(",")
@@ -480,6 +614,36 @@ function integerString(value: unknown, field: string) {
 
 function requireField(payload: Record<string, string>, key: string) {
   if (!payload[key]) throw new Error(`Missing required payload field ${key}.`);
+
+  return undefined;
+}
+
+function buildApiPayload(input: ProductCreateDraft) {
+  const payload: Record<string, string> = {
+    name: input.name,
+    price: String(input.priceCents),
+    currency: input.currency.toLowerCase(),
+  };
+
+  if (input.description) payload.description = input.description;
+  if (typeof input.published === "boolean") payload.published = String(input.published);
+  if (input.customSummary) payload.custom_summary = input.customSummary;
+  if (input.customReceipt) payload.custom_receipt = input.customReceipt;
+  if (input.tags?.length) payload.tags = input.tags.join(",");
+
+  return payload;
+}
+
+function createPreview(input: ProductCreateDraft, payload: Record<string, string>) {
+  const lines = [
+    `Product: ${input.name}`,
+    `Price: ${input.priceCents} ${input.currency}`,
+    `Publish immediately: ${input.published === undefined ? "not specified" : String(input.published)}`,
+    `Description: ${input.description ?? "(none)"}`,
+    `Tags: ${input.tags?.join(", ") ?? "(none)"}`,
+    `API payload: ${JSON.stringify(payload)}`,
+  ];
+  return lines.join("\n");
 }
 
 function hashPayload(payload: Record<string, string>) {
